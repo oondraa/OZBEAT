@@ -145,10 +145,37 @@
   .card:nth-child(4) { transition-delay: 0.16s; }
   .deck.is-ready .card { transition-delay: 0s; }
 
+  /* Videos: one big player, four picks underneath. Plays muted while on screen, then moves to the next clip. */
+  .watch { padding: 80px 0 0; }
+  .watch h2, .duo h2 { margin: 0; font-size: clamp(28px, 3.4vw, 40px); line-height: 1.1; font-weight: 650; letter-spacing: -0.03em; }
+  .watch > p { margin: 12px 0 28px; max-width: 52ch; color: var(--muted); font-size: 17px; line-height: 1.55; }
+  .player {
+    position: relative; aspect-ratio: 16 / 9; border-radius: 16px; overflow: hidden; background: #000;
+    border: 1px solid var(--line); box-shadow: 0 1px 2px rgba(20, 24, 40, 0.06), 0 24px 60px -24px rgba(20, 24, 40, 0.35);
+  }
+  .player video { width: 100%; height: 100%; display: block; object-fit: cover; cursor: pointer; }
+  .player .state {
+    position: absolute; right: 14px; bottom: 14px; width: 40px; height: 40px; border: 0; border-radius: 999px; cursor: pointer;
+    display: grid; place-items: center; font-size: 18px; color: #fff;
+    background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  }
+  .picks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+  .pick {
+    display: flex; flex-direction: column; gap: 8px; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; color: var(--text);
+  }
+  .pick img {
+    width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 10px; display: block;
+    outline: 2px solid transparent; outline-offset: 2px; opacity: 0.6; transition: opacity 0.3s var(--ease), outline-color 0.3s var(--ease);
+  }
+  .pick:hover img { opacity: 0.9; }
+  .pick[aria-pressed="true"] img { opacity: 1; outline-color: var(--accent); }
+  .pick span { display: flex; flex-direction: column; font-size: 14px; line-height: 1.35; }
+  .pick b { font-weight: 600; }
+  .pick small { color: var(--muted); font-size: 13px; }
+
   /* Screenshots */
   .shot { display: block; width: 100%; height: auto; border-radius: 16px; border: 1px solid var(--line); background: #111; box-shadow: 0 1px 2px rgba(20, 24, 40, 0.06), 0 24px 60px -24px rgba(20, 24, 40, 0.35); }
   .duo { padding: 80px 0 0; }
-  .duo h2 { margin: 0; font-size: clamp(28px, 3.4vw, 40px); line-height: 1.1; font-weight: 650; letter-spacing: -0.03em; }
   .duo > p { margin: 12px 0 28px; max-width: 52ch; color: var(--muted); font-size: 17px; line-height: 1.55; }
   .screens { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
   .screens figure { margin: 0; }
@@ -204,6 +231,8 @@
     .hero p { font-size: 17px; }
     .app-icon { width: 60px; height: 60px; margin-bottom: 24px; }
     .features, .screens { grid-template-columns: minmax(0, 1fr); }
+    .picks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .watch { padding-top: 56px; }
     .duo { padding-top: 56px; }
     .note { margin-bottom: 64px; }
   }
@@ -239,6 +268,20 @@
         <div class="feature"><i class="ph ph-microphone-stage" aria-hidden="true"></i><div><h2 data-i18n="f3T">Synced lyrics</h2><p data-i18n="f3">Line by line, in time with the song.</p></div></div>
         <div class="feature"><i class="ph ph-image" aria-hidden="true"></i><div><h2 data-i18n="f4T">Artwork background</h2><p data-i18n="f4">The blurred cover flows behind everything, in the song's own colors.</p></div></div>
       </div>
+      <section class="watch">
+        <h2 data-i18n="watchT">See it play</h2>
+        <p data-i18n="watch">Real recordings from OZBEAT. The background flows in the cover's colors and the lyrics follow the song.</p>
+        <div class="player">
+          <video id="player" muted playsinline preload="none" poster="assets/video/sheen.jpg" src="assets/video/sheen.mp4" aria-label="OZBEAT recording"></video>
+          <button class="state" id="player-state" type="button" aria-label="Play"><i class="ph ph-play" aria-hidden="true"></i></button>
+        </div>
+        <div class="picks">
+          <button class="pick" type="button" data-clip="sheen" aria-pressed="true"><img src="assets/video/sheen.jpg" alt="" loading="lazy" width="1280" height="720"><span><b>Viktor Sheen</b><small>V pekle</small></span></button>
+          <button class="pick" type="button" data-clip="yzo" aria-pressed="false"><img src="assets/video/yzo.jpg" alt="" loading="lazy" width="1280" height="720"><span><b>Yzomandias</b><small>COUPÉ</small></span></button>
+          <button class="pick" type="button" data-clip="ptk" aria-pressed="false"><img src="assets/video/ptk.jpg" alt="" loading="lazy" width="1280" height="720"><span><b>PTK</b><small>Víš jak bolí říkat RIP</small></span></button>
+          <button class="pick" type="button" data-clip="ye" aria-pressed="false"><img src="assets/video/ye.jpg" alt="" loading="lazy" width="1280" height="720"><span><b>Kanye West</b><small>Black Skinhead</small></span></button>
+        </div>
+      </section>
       <section class="duo">
         <h2 data-i18n="duoT">Two screens</h2>
         <p data-i18n="duo">Press Ctrl+D. The cover stays on your monitor and the lyrics go big on the TV or second screen.</p>
@@ -280,6 +323,7 @@
     f4T: "Pozadí z obalu", f4: "Rozmazaný obal alba plyne za vším ostatním, v barvách písničky.",
     duoT: "Dvě obrazovky", duo: "Stiskněte Ctrl+D. Obal zůstane na monitoru a texty se zvětší na televizi nebo druhé obrazovce.",
     scr1: "Hlavní obrazovka", scr2: "Druhá obrazovka",
+    watchT: "Podívejte se, jak to hraje", watch: "Skutečné záznamy z OZBEATu. Pozadí plyne v barvách obalu a text jde s písničkou.",
     note: "Když Windows SmartScreen varuje, klikněte na Další informace a pak Přesto spustit. Aplikace zatím není digitálně podepsaná.",
     releases: "Vydání", license: "Licence"
   };
@@ -324,6 +368,38 @@
     }, 5000);
   }
   restart();
+
+  // Videos: play while on screen, advance to the next clip when one ends.
+  var video = document.getElementById("player"), stateBtn = document.getElementById("player-state");
+  var picks = Array.prototype.slice.call(document.querySelectorAll(".pick"));
+  var onScreen = false, userPaused = reduce;
+  function syncState() {
+    stateBtn.innerHTML = '<i class="ph ' + (video.paused ? "ph-play" : "ph-pause") + '" aria-hidden="true"></i>';
+    stateBtn.setAttribute("aria-label", video.paused ? "Play" : "Pause");
+  }
+  function tryPlay() { if (onScreen && !userPaused) { var pr = video.play(); if (pr) pr.catch(function () {}); } }
+  function load(clip) {
+    picks.forEach(function (b) { b.setAttribute("aria-pressed", b.dataset.clip === clip ? "true" : "false"); });
+    video.poster = "assets/video/" + clip + ".jpg";
+    video.src = "assets/video/" + clip + ".mp4";
+    tryPlay();
+  }
+  picks.forEach(function (b) { b.addEventListener("click", function () { userPaused = false; onScreen = true; load(b.dataset.clip); }); });
+  video.addEventListener("ended", function () {
+    var i = picks.findIndex(function (b) { return b.getAttribute("aria-pressed") === "true"; });
+    load(picks[(i + 1) % picks.length].dataset.clip);
+  });
+  function toggle() {
+    if (video.paused) { userPaused = false; onScreen = true; tryPlay(); } else { userPaused = true; video.pause(); }
+  }
+  video.addEventListener("click", toggle);
+  stateBtn.addEventListener("click", toggle);
+  video.addEventListener("play", syncState);
+  video.addEventListener("pause", syncState);
+  new IntersectionObserver(function (es) {
+    onScreen = es[0].isIntersecting;
+    if (onScreen) tryPlay(); else video.pause();
+  }, { threshold: 0.4 }).observe(video);
 
   // Two screens: switch between the example pairs with a short crossfade.
   var screens = document.getElementById("screens"), imgs = screens.querySelectorAll("img");
