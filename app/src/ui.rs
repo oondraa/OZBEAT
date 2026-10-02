@@ -13,6 +13,7 @@ use mv_audio::Capture;
 use mv_core::{Device, NowPlaying, PlaybackState};
 use mv_enrich::Enrichment;
 
+use crate::Mode;
 use crate::art::{Art, DEFAULT_PALETTE, Picture};
 use crate::background::{self, Background, Uniforms};
 use crate::pipeline::SharedScene;
@@ -62,7 +63,24 @@ pub struct VisualApp {
     /// so the flow speeds up smoothly instead of jumping.
     flow: f32,
     last_frame: Instant,
+    mode: Mode,
+    /// Screensaver: every monitor besides the main window's, each in its own
+    /// fullscreen window. Split like Ctrl+D: the first one shows the lyrics,
+    /// any further ones the full visual.
+    screens: Vec<usize>,
+    /// Screensaver: where the pointer was first seen in each window (main
+    /// window first, then `screens`), so only a real move closes it.
+    wake_origin: Vec<Option<Pos2>>,
+    /// Screensaver: last time the main window was pushed into fullscreen.
+    fullscreen_retry: Instant,
 }
+
+/// Screensaver: input right after start is the window settling, not the user.
+const WAKE_GRACE: Duration = Duration::from_millis(800);
+/// Screensaver: how often to re-request fullscreen for the main window.
+const FULLSCREEN_RETRY: Duration = Duration::from_millis(500);
+/// Screensaver: pointer travel (points) that counts as the user moving the mouse.
+const WAKE_DISTANCE: f32 = 12.0;
 
 /// Eases the lyric list from one line to the next instead of jumping.
 struct LyricScroll {
@@ -113,14 +131,29 @@ impl VisualApp {
         cc: &eframe::CreationContext<'_>,
         scene: SharedScene,
         settings: SharedSettings,
+        mode: Mode,
     ) -> Self {
         install_fonts(&cc.egui_ctx);
         install_style(&cc.egui_ctx);
         if let Some(render_state) = &cc.wgpu_render_state {
             background::init(render_state);
         }
-        // First run opens the setup panel by itself.
-        let settings_open = !settings.lock().unwrap().setup_done;
+        let settings_open = match mode {
+            Mode::Configure => true,
+            // Nobody is at the keyboard to go through the setup.
+            Mode::Screensaver => false,
+            // First run opens the setup panel by itself.
+            Mode::Window | Mode::Preview => !settings.lock().unwrap().setup_done,
+        };
+        // A screensaver covers every screen; the main window sits on the primary one.
+        let screens: Vec<usize> = if mode == Mode::Screensaver {
+            let displays = display_info::DisplayInfo::all().unwrap_or_default();
+            (0..displays.len())
+                .filter(|&i| Some(i) != crate::primary_monitor(&displays))
+                .collect()
+        } else {
+            Vec::new()
+        };
         Self {
             scene,
             settings,
@@ -134,7 +167,42 @@ impl VisualApp {
             lyric_scroll: LyricScroll::new(),
             flow: 0.0,
             last_frame: Instant::now(),
+            mode,
+            wake_origin: vec![None; screens.len() + 1],
+            fullscreen_retry: Instant::now(),
+            screens,
         }
+    }
+
+    /// Screensaver: true once a key, click, wheel, touch or real mouse move
+    /// arrives in window `slot` (0 = main window, then `screens`).
+    fn wakes(&mut self, ui: &egui::Ui, slot: usize) -> bool {
+        let settling = self.started.elapsed() < WAKE_GRACE;
+        let origin = &mut self.wake_origin[slot];
+        ui.input(|i| {
+            if let Some(pos) = i.pointer.latest_pos()
+                && (settling || origin.is_none())
+            {
+                *origin = Some(pos);
+            }
+            if settling {
+                return false;
+            }
+            let moved = matches!((*origin, i.pointer.latest_pos()),
+                (Some(a), Some(b)) if a.distance(b) > WAKE_DISTANCE);
+            moved
+                || i.events.iter().any(|e| {
+                    matches!(
+                        e,
+                        egui::Event::Key { key, pressed: true, .. } if !is_modifier(*key)
+                    ) || matches!(
+                        e,
+                        egui::Event::PointerButton { pressed: true, .. }
+                            | egui::Event::MouseWheel { .. }
+                            | egui::Event::Touch { .. }
+                    )
+                })
+        })
     }
 
     fn sync_textures(&mut self, ctx: &egui::Context, art: Option<&Arc<Art>>) {
@@ -167,12 +235,33 @@ impl VisualApp {
 impl eframe::App for VisualApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
-        self.handle_keys(&ctx);
+        if self.mode == Mode::Screensaver {
+            // On Windows the builder's fullscreen flag can be lost while the
+            // main window is still hidden, and winit then ignores a repeated
+            // request because it believes it is fullscreen. Toggling it off
+            // and on fixes that; retried until the window covers its monitor.
+            let covers = ctx.input(|i| {
+                let v = i.viewport();
+                matches!((v.outer_rect, v.monitor_size),
+                    (Some(r), Some(m)) if r.width() + 1.0 >= m.x && r.height() + 1.0 >= m.y)
+            });
+            if !covers && self.fullscreen_retry.elapsed() > FULLSCREEN_RETRY {
+                self.fullscreen_retry = Instant::now();
+                ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
+            }
+            ctx.set_cursor_icon(egui::CursorIcon::None);
+            if self.wakes(ui, 0) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+        } else {
+            self.handle_keys(&ctx);
+        }
 
         let frame = self.prepare_frame(&ctx);
         // With a second screen the content is split: cover and titles here,
         // lyrics over there.
-        let content = if self.mirror.is_some() {
+        let content = if self.mirror.is_some() || !self.screens.is_empty() {
             Content::CoverOnly
         } else {
             Content::Full
@@ -180,6 +269,9 @@ impl eframe::App for VisualApp {
         self.draw_visual(ui, &frame, content);
         if let Some(monitor) = self.mirror {
             self.show_mirror(&ctx, monitor, &frame);
+        }
+        for slot in 0..self.screens.len() {
+            self.show_screen(&ctx, slot, &frame);
         }
         if self.settings_open {
             // Dim the visuals so the panel reads well.
@@ -197,6 +289,10 @@ impl eframe::App for VisualApp {
             if !keep_open {
                 self.close_settings();
             }
+        }
+        // Opened from the screensaver dialog: done once the settings close.
+        if self.mode == Mode::Configure && !self.settings_open {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         self.draw_toast(&ctx);
         ctx.request_repaint();
@@ -445,6 +541,37 @@ impl VisualApp {
         if close {
             self.mirror = None;
             self.show_toast("Druhá obrazovka vypnuta");
+        }
+    }
+
+    /// Screensaver: fullscreen on `screens[slot]`, the lyrics on the first
+    /// extra screen (as with Ctrl+D) and the full visual on any further one;
+    /// input there closes the whole screensaver.
+    fn show_screen(&mut self, ctx: &egui::Context, slot: usize, frame: &FrameData) {
+        let monitor = self.screens[slot];
+        let builder = egui::ViewportBuilder::default()
+            .with_title("OZBEAT")
+            .with_monitor(monitor)
+            .with_fullscreen(true)
+            .with_decorations(false)
+            .with_window_level(egui::WindowLevel::AlwaysOnTop);
+        let mut wake = false;
+        ctx.show_viewport_immediate(
+            egui::ViewportId::from_hash_of(("ozbeat-screen", monitor)),
+            builder,
+            |ui, _class| {
+                let content = if slot == 0 {
+                    Content::LyricsOnly
+                } else {
+                    Content::Full
+                };
+                self.draw_visual(ui, frame, content);
+                ui.ctx().set_cursor_icon(egui::CursorIcon::None);
+                wake = self.wakes(ui, slot + 1) || ui.input(|i| i.viewport().close_requested());
+            },
+        );
+        if wake {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
 
@@ -777,6 +904,23 @@ fn pulse(
         }
         _ => 0.12 * (0.5 + 0.5 * (time * 1.6).sin()),
     }
+}
+
+/// Windows replays a lone AltGr/Alt/Ctrl when the window gains focus, so
+/// modifiers alone never close the screensaver.
+fn is_modifier(key: egui::Key) -> bool {
+    use egui::Key::*;
+    matches!(
+        key,
+        ShiftLeft
+            | ShiftRight
+            | ControlLeft
+            | ControlRight
+            | AltLeft
+            | AltRight
+            | SuperLeft
+            | SuperRight
+    )
 }
 
 /// F11 or double-click toggles fullscreen, Esc leaves it. Double-click is

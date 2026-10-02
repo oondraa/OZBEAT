@@ -29,6 +29,11 @@ OPTIONS:
                      for music played by this computer, mic for speakers)
     -h, --help       Print this help
 
+SCREENSAVER (rename or copy the exe to OZBEAT.scr, then right-click > Install):
+    /s               Run as the screensaver; any input closes it
+    /c               Open the settings
+    /p <HWND>        Preview in the Windows dialog (not supported, exits)
+
 KEYS:
     Ctrl+S               settings
     Ctrl+D               mirror the visuals on the next screen
@@ -77,8 +82,50 @@ fn parse_args(
     Ok(Some((opts, overrides)))
 }
 
+/// How Windows asked us to run when started as a `.scr` screensaver.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Mode {
+    /// A normal window (no screensaver argument).
+    Window,
+    /// `/s`: fullscreen on top of everything, closed by any input.
+    Screensaver,
+    /// `/c`: the screensaver dialog's Settings button.
+    Configure,
+    /// `/p <HWND>`: the small preview in the screensaver dialog.
+    Preview,
+}
+
+/// Windows passes `/s`, `/c`, `/c:<HWND>`, `/p <HWND>` or `/p:<HWND>`, in any case.
+fn screensaver_mode(first: Option<&str>) -> Mode {
+    let Some(arg) = first.and_then(|a| a.strip_prefix('/').or_else(|| a.strip_prefix('-'))) else {
+        return Mode::Window;
+    };
+    let flag = arg
+        .split(':')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    match flag.as_str() {
+        "s" => Mode::Screensaver,
+        "c" => Mode::Configure,
+        "p" => Mode::Preview,
+        _ => Mode::Window,
+    }
+}
+
 fn main() -> ExitCode {
-    let (opts, overrides) = match parse_args(std::env::args().skip(1)) {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mode = screensaver_mode(args.first().map(String::as_str));
+    if mode == Mode::Preview {
+        // eframe cannot draw into the dialog's preview window; leave it black.
+        return ExitCode::SUCCESS;
+    }
+    let args = if mode == Mode::Window {
+        args
+    } else {
+        Vec::new()
+    };
+    let (opts, overrides) = match parse_args(args.into_iter()) {
         Ok(Some(parsed)) => parsed,
         Ok(None) => {
             println!("{HELP}");
@@ -114,6 +161,16 @@ fn main() -> ExitCode {
         .with_title("OZBEAT")
         .with_inner_size([1280.0, 720.0])
         .with_min_inner_size([640.0, 360.0]);
+    if mode == Mode::Screensaver {
+        let displays = display_info::DisplayInfo::all().unwrap_or_default();
+        if let Some(primary) = primary_monitor(&displays) {
+            viewport = viewport.with_monitor(primary);
+        }
+        viewport = viewport
+            .with_fullscreen(true)
+            .with_decorations(false)
+            .with_window_level(egui::WindowLevel::AlwaysOnTop);
+    }
     if let Some(icon) = window_icon() {
         viewport = viewport.with_icon(Arc::new(icon));
     }
@@ -124,7 +181,7 @@ fn main() -> ExitCode {
     let result = eframe::run_native(
         "OZBEAT",
         options,
-        Box::new(move |cc| Ok(Box::new(ui::VisualApp::new(cc, scene, settings)))),
+        Box::new(move |cc| Ok(Box::new(ui::VisualApp::new(cc, scene, settings, mode)))),
     );
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -133,6 +190,12 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Index of the primary monitor, in the order winit lists monitors (on
+/// Windows both enumerate via EnumDisplayMonitors).
+pub(crate) fn primary_monitor(displays: &[display_info::DisplayInfo]) -> Option<usize> {
+    displays.iter().position(|d| d.is_primary)
 }
 
 /// Title bar and taskbar icon; the dark variant reads well on both themes.
