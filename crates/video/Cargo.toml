@@ -1,0 +1,11 @@
+[package]
+name = "mv-video"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+dirs = "7.0.0"
+mv-enrich = { version = "0.1.0", path = "../enrich" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+tokio = { version = "1.53.1", features = ["process", "time", "sync", "fs", "io-util"] }
