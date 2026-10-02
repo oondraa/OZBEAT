@@ -196,6 +196,22 @@
   .feature h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; letter-spacing: -0.015em; }
   .feature p { margin: 0; color: var(--muted); font-size: 15.5px; line-height: 1.55; text-wrap: pretty; }
 
+  /* Screensaver */
+  .saver {
+    margin-top: 80px; padding: 32px; border-radius: 16px; display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 32px; align-items: center;
+    background: radial-gradient(120% 100% at 100% 0%, color-mix(in srgb, var(--accent-fill) 22%, var(--surface)), var(--surface) 62%);
+    border: 1px solid var(--line);
+  }
+  .saver h2 { margin: 0; font-size: clamp(26px, 3vw, 36px); line-height: 1.1; font-weight: 650; letter-spacing: -0.03em; }
+  .saver > div > p { margin: 12px 0 20px; color: var(--muted); font-size: 16.5px; line-height: 1.55; max-width: 40ch; }
+  .saver ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; counter-reset: step; }
+  .saver li { display: flex; gap: 14px; align-items: baseline; font-size: 16px; line-height: 1.5; counter-increment: step; }
+  .saver li::before {
+    content: counter(step); flex-shrink: 0; width: 28px; height: 28px; border-radius: 999px; display: grid; place-items: center;
+    background: var(--accent-fill); color: #fff; font-size: 14px; font-weight: 600; transform: translateY(-1px);
+  }
+  .saver li span { color: var(--muted); }
+
   /* SmartScreen note */
   .note {
     margin: 16px 0 96px; padding: 18px 22px; border-radius: 16px; display: flex; gap: 14px; align-items: flex-start;
@@ -230,7 +246,8 @@
     .hero { padding: 48px 0 40px; }
     .hero p { font-size: 17px; }
     .app-icon { width: 60px; height: 60px; margin-bottom: 24px; }
-    .features, .screens { grid-template-columns: minmax(0, 1fr); }
+    .features, .screens, .saver { grid-template-columns: minmax(0, 1fr); }
+    .saver { padding: 24px; gap: 24px; margin-top: 56px; }
     .picks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .watch { padding-top: 56px; }
     .duo { padding-top: 56px; }
@@ -248,7 +265,7 @@
         <p class="rise" style="--i:2" data-i18n="heroSub">OZBEAT shows what your PC or BluOS speakers are playing, with artwork, synced lyrics and visuals that move with the music.</p>
         <div class="ctas rise" style="--i:3">
           <a class="btn btn-primary" href="https://github.com/oondraa/OZBEAT/releases/latest/download/OZBEAT.exe"><i class="ph ph-download-simple" aria-hidden="true"></i><span data-i18n="cta">Download for Windows</span></a>
-          <a class="btn btn-ghost" href="https://github.com/oondraa/OZBEAT"><i class="ph ph-github-logo" aria-hidden="true"></i><span>GitHub</span></a>
+          <a class="btn btn-ghost" href="#screensaver"><i class="ph ph-monitor" aria-hidden="true"></i><span data-i18n="ctaScr">Screensaver</span></a>
         </div>
         <div class="meta rise" style="--i:3" data-i18n="meta">Windows 10 and 11, 64-bit. Nothing to install. Free for personal use.</div>
         </div>
@@ -294,7 +311,19 @@
           <figure><img class="shot" src="assets/shots/yzo2.webp" width="1600" height="899" loading="lazy" alt="Second screen: large synced lyrics"><figcaption data-i18n="scr2">Second screen</figcaption></figure>
         </div>
       </section>
-      <div class="note" style="margin-top: 80px;"><i class="ph ph-shield-warning" aria-hidden="true"></i><span data-i18n="note">If Windows SmartScreen warns you, click More info and then Run anyway. The app isn't code-signed yet.</span></div>
+      <section class="saver" id="screensaver">
+        <div>
+          <h2 data-i18n="scrT">Also a screensaver</h2>
+          <p data-i18n="scr">The same picture when your PC is idle, on all your monitors. Move the mouse or press a key to close it.</p>
+          <a class="btn btn-primary" href="https://github.com/oondraa/OZBEAT/releases/latest/download/OZBEAT.scr"><i class="ph ph-download-simple" aria-hidden="true"></i><span data-i18n="ctaScrDl">Download OZBEAT.scr</span></a>
+        </div>
+        <ol>
+          <li><div><b data-i18n="st1T">Download OZBEAT.scr.</b> <span data-i18n="st1">Run OZBEAT.exe once before, so your settings are ready.</span></div></li>
+          <li><div><b data-i18n="st2T">Right-click it and choose Install.</b> <span data-i18n="st2">The Windows screensaver settings open.</span></div></li>
+          <li><div><b data-i18n="st3T">Set how long to wait and click OK.</b> <span data-i18n="st3">The small preview in that window stays black. That's expected.</span></div></li>
+        </ol>
+      </section>
+      <div class="note" style="margin-top: 16px;"><i class="ph ph-shield-warning" aria-hidden="true"></i><span data-i18n="note">If Windows SmartScreen warns you, click More info and then Run anyway. The app isn't code-signed yet.</span></div>
     </div>
   </main>
 
@@ -302,6 +331,7 @@
     <div class="wrap">
       <span>© 2026 Ondřej Zajíček (oondraa)</span>
       <nav aria-label="Links">
+        <a href="https://github.com/oondraa/OZBEAT">GitHub</a>
         <a href="https://github.com/oondraa/OZBEAT/releases" data-i18n="releases">Releases</a>
         <a href="https://github.com/oondraa/OZBEAT/blob/main/LICENSE" data-i18n="license">License</a>
         <a href="https://oondraa.pages.dev/">OZLAB</a>
@@ -316,6 +346,11 @@
     heroA: "Vaše hudba", heroB: "na velké obrazovce.",
     heroSub: "OZBEAT ukazuje, co hraje váš počítač nebo reproduktory BluOS. S obalem alba, synchronizovanými texty a vizuály, které se hýbou s hudbou.",
     cta: "Stáhnout pro Windows",
+    ctaScr: "Spořič obrazovky", ctaScrDl: "Stáhnout OZBEAT.scr",
+    scrT: "Je to i spořič obrazovky", scr: "Stejný obraz, když počítač nic nedělá, na všech monitorech. Pohněte myší nebo stiskněte klávesu a zavře se.",
+    st1T: "Stáhněte OZBEAT.scr.", st1: "Předtím jednou spusťte OZBEAT.exe, ať máte hotové nastavení.",
+    st2T: "Klikněte na něj pravým tlačítkem a zvolte Instalovat.", st2: "Otevře se nastavení spořiče ve Windows.",
+    st3T: "Nastavte, za jak dlouho se má spustit, a dejte OK.", st3: "Malý náhled v tom okně zůstane černý. To je v pořádku.",
     meta: "Windows 10 a 11, 64bit. Nic se neinstaluje. Zdarma pro osobní použití.",
     f1T: "Cokoliv v počítači", f1: "Spotify, prohlížeč nebo jakákoliv aplikace v ovládání médií ve Windows.",
     f2T: "Reproduktory BluOS", f2: "Přehrávače Bluesound ve vaší síti se najdou samy.",
