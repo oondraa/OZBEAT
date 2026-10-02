@@ -1,0 +1,106 @@
+OZBEAT Personal Use License
+Version 1.0
+
+Copyright (c) 2026 Ondra (oondraa). All rights reserved.
+
+This license governs the OZBEAT software, including its source code, compiled
+binaries, installers, documentation, logos, icons, artwork and the "OZBEAT"
+name (together, the "Software"). The Software is source-available, NOT open
+source. By downloading, installing, copying or using the Software you agree to
+these terms. If you do not agree, do not use the Software.
+
+1. PERMITTED USE
+
+   You may, free of charge:
+
+   a) download, install and run the Software on devices you own or control,
+      solely for your own private, personal and non-commercial purposes;
+   b) read and study the source code, and build it yourself, solely for the
+      purposes in (a);
+   c) modify the source code for your own private use, provided that you do
+      not distribute the modified version in any form.
+
+2. PROHIBITED USE
+
+   Unless you have prior written permission from the copyright holder, you
+   may NOT:
+
+   a) use the Software, or any part or output of it, for any commercial
+      purpose. Commercial purpose includes, without limitation: use by or on
+      behalf of a business, organisation or institution; use in a shop,
+      restaurant, bar, club, venue, event, exhibition, broadcast, stream or
+      any public performance where money, advertising revenue, donations,
+      sponsorship or any other benefit is obtained directly or indirectly;
+      use in any paid service or product; and use for providing services to
+      third parties;
+   b) sell, rent, lease, license, sublicense or otherwise charge for the
+      Software or access to it;
+   c) redistribute, publish, re-upload, mirror or share the Software, its
+      source code or binaries, whether original or modified, in whole or in
+      part, including on websites, app stores, package managers or file
+      sharing services. Sharing a link to the official repository
+      (https://github.com/oondraa/OZBEAT) is allowed;
+   d) incorporate the Software, or any part of its source code, into another
+      product, project or service;
+   e) remove, alter or obscure any copyright notice, this license, or the
+      OZBEAT name and branding;
+   f) use the OZBEAT name, logo or branding to identify any other product,
+      service or project, or in a way that suggests endorsement;
+   g) use the source code, assets or outputs of the Software to train,
+      fine-tune or evaluate machine-learning models;
+   h) circumvent any technical limitation of the Software, or use it in
+      breach of the terms of any third-party service it connects to.
+
+3. OWNERSHIP
+
+   The Software is licensed, not sold. The copyright holder retains all
+   right, title and interest in and to the Software, including all
+   intellectual property rights. All rights not expressly granted in this
+   license are reserved.
+
+4. CONTRIBUTIONS
+
+   If you submit any contribution (code, issue, idea or other material) to
+   the official repository, you grant the copyright holder a perpetual,
+   worldwide, irrevocable, royalty-free right to use, modify, sublicense and
+   distribute it as part of the Software under any terms.
+
+5. THIRD-PARTY COMPONENTS
+
+   The Software includes third-party open-source components, each of which
+   remains under its own license, listed in THIRD_PARTY_LICENSES.md. Nothing
+   in this license restricts your rights under those licenses with respect to
+   those components alone. Third-party services and content the Software
+   connects to (for example media players, artwork databases or video
+   platforms) are subject to their own terms, which you are responsible for
+   following.
+
+6. TERMINATION
+
+   This license terminates automatically and immediately if you breach any of
+   its terms. On termination you must stop using the Software and delete all
+   copies in your possession. Sections 2, 3, 4, 7, 8 and 9 survive
+   termination.
+
+7. NO WARRANTY
+
+   THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF
+   ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+   OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
+
+8. LIMITATION OF LIABILITY
+
+   TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE
+   COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+   WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
+   OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   SOFTWARE.
+
+9. GOVERNING LAW
+
+   This license is governed by the laws of the Czech Republic. Nothing in
+   this license limits any rights you have as a consumer that cannot be
+   limited by agreement under applicable law.
+
+For commercial licensing or any use not permitted above, contact the
+copyright holder through https://github.com/oondraa.
