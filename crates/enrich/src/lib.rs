@@ -93,7 +93,15 @@ impl Enricher {
         }
     }
 
-    pub async fn enrich(&self, track: &Track, duration: Option<Duration>) -> Enrichment {
+    /// `preview` gets Deezer's cover and artist photo as soon as they are known,
+    /// so artwork can show up before the slower lookups (iTunes, lyrics, artist
+    /// art) finish. It is not called when Deezer has nothing.
+    pub async fn enrich(
+        &self,
+        track: &Track,
+        duration: Option<Duration>,
+        preview: impl FnOnce(Enrichment),
+    ) -> Enrichment {
         let mut out = Enrichment::default();
         let Some(artist) = track
             .artist
@@ -108,8 +116,21 @@ impl Enricher {
         let title = track.title.as_str();
         let http = &self.http;
 
-        let (deezer, itunes, lyrics, artist_art) = tokio::join!(
-            deezer::lookup(http, artist, title),
+        let deezer = async {
+            let found = deezer::search(http, artist, title).await;
+            let Ok(Some(found)) = found else {
+                return (found, None);
+            };
+            let mut early = Enrichment::default();
+            add_deezer_images(&mut early.images, &found);
+            if !early.images.is_empty() {
+                preview(early);
+            }
+            let bpm = deezer::bpm(http, found.id).await;
+            (Ok(Some(found)), bpm)
+        };
+        let ((deezer, bpm), itunes, lyrics, artist_art) = tokio::join!(
+            deezer,
             itunes::cover(
                 http,
                 &self.config.country,
@@ -155,10 +176,9 @@ impl Enricher {
             add(ImageKind::Banner, "theaudiodb", a.banner);
         }
         if let Some(d) = deezer {
-            add(ImageKind::Cover, "deezer", d.cover);
-            add(ImageKind::ArtistPhoto, "deezer", d.artist_picture);
-            out.bpm = d.bpm;
+            add_deezer_images(&mut out.images, &d);
         }
+        out.bpm = bpm;
         out
     }
 
@@ -188,6 +208,22 @@ impl Enricher {
             _ => Ok(None),
         };
         (audiodb, fanart)
+    }
+}
+
+fn add_deezer_images(images: &mut Vec<Image>, found: &deezer::Found) {
+    let kinds = [
+        (ImageKind::Cover, &found.cover),
+        (ImageKind::ArtistPhoto, &found.artist_picture),
+    ];
+    for (kind, url) in kinds {
+        if let Some(url) = url {
+            images.push(Image {
+                kind,
+                url: url.clone(),
+                source: "deezer",
+            });
+        }
     }
 }
 

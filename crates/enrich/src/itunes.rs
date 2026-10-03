@@ -107,15 +107,16 @@ pub(crate) async fn cover(
     Ok(by_title
         .or_else(by_album)
         .and_then(|s| s.artwork_url100.as_deref())
-        .map(original_size))
+        .map(display_size))
 }
 
 fn parse<T: for<'de> Deserialize<'de>>(body: &str) -> Result<T, FetchError> {
     serde_json::from_str(body).map_err(|e| FetchError::Parse(e.to_string()))
 }
 
-/// Artwork URLs end in `100x100bb.jpg`; requesting a huge size returns the
-/// original upload instead (the CDN never upscales).
-fn original_size(url: &str) -> String {
-    url.replace("/100x100bb.", "/5000x5000bb.")
+/// Artwork URLs end in `100x100bb.jpg`; the CDN scales to any size asked for
+/// (never up). The app shows covers at most 1600px, and the original can be a
+/// 5 MB 3000px JPEG that is slow to download and decode.
+fn display_size(url: &str) -> String {
+    url.replace("/100x100bb.", "/1600x1600bb.")
 }
