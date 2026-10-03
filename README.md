@@ -65,7 +65,9 @@ Run `OZBEAT.exe` once before you use the screensaver, so your settings are ready
 
 **No lyrics for a song.** Lyrics come from a free public database, and not every song is in it. OZBEAT then shows the title and artist instead.
 
-**Does it send my data anywhere?** It only looks up artwork and lyrics for the song that is playing, using public music databases. There are no accounts and no tracking.
+**How do I update?** OZBEAT checks for a new version when it starts. If there is one, open the settings with `Ctrl+S` and click **Aktualizovat a restartovat**. It downloads the new version, checks it and restarts. This works from version 0.1.3 on; for older versions, download the exe again.
+
+**Does it send my data anywhere?** It only looks up artwork and lyrics for the song that is playing, using public music databases, and asks GitHub whether there is a newer version. There are no accounts and no tracking.
 
 <details>
 <summary><b>Advanced: command-line options</b></summary>
@@ -130,6 +132,8 @@ Když Windows ukáže hlášku **„Systém Windows ochránil váš počítač�
 3. V okně spořiče nastav, po kolika minutách se má spustit, a dej **OK**.
 
 Spořič zabere všechny monitory: na hlavním je obal a název, na druhém text. Ukončíš ho pohybem myši nebo klávesou.
+
+**Aktualizace:** když vyjde nová verze, otevři nastavení (`Ctrl+S`) a klikni na **Aktualizovat a restartovat**. Funguje to od verze 0.1.3, starší verzi stáhni znovu.
 
 **Klávesy:** `F11` nebo dvojklik přepíná celou obrazovku. `Ctrl+D` zapne druhý monitor. `Ctrl+S` otevře nastavení. `Esc` celou obrazovku nebo nastavení zavře.
 
