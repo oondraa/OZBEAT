@@ -22,6 +22,8 @@ use crate::setup::{self, BRAND_BLUE};
 
 /// How long the lyrics take to scroll to the next line.
 const LYRIC_SCROLL: Duration = Duration::from_millis(450);
+/// How long cover, photo, background and colors take to blend into new ones.
+const ART_FADE: Duration = Duration::from_millis(700);
 const TOAST_VISIBLE: Duration = Duration::from_millis(2400);
 const TOAST_FADE: Duration = Duration::from_millis(600);
 
@@ -42,9 +44,62 @@ const REGULAR_FONTS: &[&str] = &[
 ];
 
 struct Textures {
-    art_id: u64,
     cover: Option<TextureHandle>,
     photo: Option<TextureHandle>,
+}
+
+/// Art on screen together with its uploaded textures.
+struct Shown {
+    art: Arc<Art>,
+    textures: Textures,
+}
+
+/// The current art fading in over the previous one.
+struct ArtFade {
+    current: Option<Shown>,
+    /// Fading out, with how visible it was when the fade started.
+    previous: Option<(Shown, f32)>,
+    changed: Instant,
+}
+
+impl ArtFade {
+    /// 0 -> 1 over [`ART_FADE`], eased.
+    fn progress(&self) -> f32 {
+        let t = (self.changed.elapsed().as_secs_f32() / ART_FADE.as_secs_f32()).min(1.0);
+        t * t * (3.0 - 2.0 * t)
+    }
+
+    /// How visible the previous art is now.
+    fn previous_alpha(&self) -> f32 {
+        let Some((_, start)) = &self.previous else {
+            return 0.0;
+        };
+        // Under a new picture it stays put until covered; alone it fades out.
+        if self.current.is_some() {
+            *start
+        } else {
+            start * (1.0 - self.progress())
+        }
+    }
+
+    /// The current and the previous art's texture, with their alpha.
+    fn layers<'a>(
+        &'a self,
+        pick: impl Fn(&'a Textures) -> Option<&'a TextureHandle>,
+    ) -> [Option<(&'a TextureHandle, f32)>; 2] {
+        let t = self.progress();
+        [
+            self.previous
+                .as_ref()
+                .filter(|_| t < 1.0)
+                .and_then(|(s, _)| pick(&s.textures))
+                .map(|tex| (tex, self.previous_alpha())),
+            self.current
+                .as_ref()
+                .and_then(|s| pick(&s.textures))
+                .map(|tex| (tex, t)),
+        ]
+    }
 }
 
 pub struct VisualApp {
@@ -57,7 +112,7 @@ pub struct VisualApp {
     logo: Option<TextureHandle>,
     icon: Option<Arc<egui::IconData>>,
     started: Instant,
-    textures: Option<Textures>,
+    art: ArtFade,
     lyric_scroll: LyricScroll,
     /// Animation phase of the background; advances faster with louder mids,
     /// so the flow speeds up smoothly instead of jumping.
@@ -163,7 +218,11 @@ impl VisualApp {
             logo: load_logo(&cc.egui_ctx),
             icon: crate::window_icon().map(Arc::new),
             started: Instant::now(),
-            textures: None,
+            art: ArtFade {
+                current: None,
+                previous: None,
+                changed: Instant::now(),
+            },
             lyric_scroll: LyricScroll::new(),
             flow: 0.0,
             last_frame: Instant::now(),
@@ -205,14 +264,20 @@ impl VisualApp {
         })
     }
 
+    /// Starts a fade when the art changes; textures are uploaded once per art.
     fn sync_textures(&mut self, ctx: &egui::Context, art: Option<&Arc<Art>>) {
-        let Some(art) = art else {
-            self.textures = None;
-            return;
-        };
-        if self.textures.as_ref().is_some_and(|t| t.art_id == art.id) {
+        let fade = &mut self.art;
+        if fade.progress() >= 1.0 {
+            fade.previous = None;
+        }
+        if fade.current.as_ref().map(|s| s.art.id) == art.map(|a| a.id) {
             return;
         }
+        let Some(art) = art else {
+            fade.previous = fade.current.take().map(|s| (s, 1.0));
+            fade.changed = Instant::now();
+            return;
+        };
         let upload = |name: &str, picture: &Option<Arc<Picture>>| {
             picture.as_ref().map(|p| {
                 let image = egui::ColorImage::from_rgba_unmultiplied(p.size, &p.rgba);
@@ -224,11 +289,24 @@ impl VisualApp {
                 ctx.load_texture(name, image, options)
             })
         };
-        self.textures = Some(Textures {
-            art_id: art.id,
-            cover: upload("cover", &art.cover),
-            photo: upload("photo", &art.photo),
-        });
+        let shown = Shown {
+            art: Arc::clone(art),
+            textures: Textures {
+                cover: upload("cover", &art.cover),
+                photo: upload("photo", &art.photo),
+            },
+        };
+        // From a picture: it stays under the new one. From nothing: whatever
+        // was still fading out stays at the level it had reached.
+        fade.previous = match fade.current.take() {
+            Some(current) => Some((current, 1.0)),
+            None => {
+                let alpha = fade.previous_alpha();
+                fade.previous.take().map(|(s, _)| (s, alpha))
+            }
+        };
+        fade.current = Some(shown);
+        fade.changed = Instant::now();
     }
 }
 
@@ -320,6 +398,9 @@ struct FrameData {
     position: Option<Duration>,
     pulse: f32,
     palette: [[f32; 3]; 3],
+    /// The art fading out, how visible it is before fading, and the fade (0 -> 1).
+    previous: Option<(Arc<Art>, f32)>,
+    fade: f32,
     /// Stopped or no source: calm idle screen without stale artwork.
     idle: bool,
     time: f32,
@@ -363,11 +444,27 @@ impl VisualApp {
         self.last_frame = Instant::now();
         self.flow += dt * (1.0 + 0.8 * levels.map_or(0.0, |l| l.mid));
 
+        let fade = self.art.progress();
+        let previous = self
+            .art
+            .previous
+            .as_ref()
+            .filter(|_| fade < 1.0)
+            .map(|(s, alpha)| (Arc::clone(&s.art), *alpha));
+        let palette_of = |art: Option<&Arc<Art>>| art.map_or(DEFAULT_PALETTE, |a| a.palette);
+        let palette = mix_palette(
+            palette_of(previous.as_ref().map(|(a, _)| a)),
+            palette_of(art.as_ref()),
+            fade,
+        );
+
         FrameData {
             idle: now_playing
                 .as_ref()
                 .is_none_or(|np| np.state == PlaybackState::Stopped),
-            palette: art.as_ref().map_or(DEFAULT_PALETTE, |a| a.palette),
+            palette,
+            previous,
+            fade,
             pulse: raw_pulse * intensity * 2.0,
             now_playing,
             enrichment,
@@ -384,11 +481,20 @@ impl VisualApp {
     fn draw_visual(&mut self, ui: &mut egui::Ui, f: &FrameData, content: Content) {
         let rect = ui.max_rect();
         let painter = ui.painter().clone();
-        let backdrop = f
-            .art
+        let backdrop_of = |art: &Arc<Art>| {
+            art.backdrop
+                .clone()
+                .map(|b| (art.id, b))
+                .filter(|_| !f.idle)
+        };
+        let backdrop = f.art.as_ref().and_then(backdrop_of);
+        let prev = f
+            .previous
             .as_ref()
-            .filter(|_| !f.idle)
-            .and_then(|a| a.backdrop.clone().map(|b| (a.id, b)));
+            .and_then(|(art, alpha)| Some((backdrop_of(art)?, *alpha)));
+        let size_of = |b: Option<&(u64, Arc<Picture>)>| {
+            b.map_or([1.0, 1.0], |(_, p)| p.size.map(|v| v as f32))
+        };
         painter.add(egui_wgpu::Callback::new_paint_callback(
             rect,
             Background {
@@ -399,13 +505,15 @@ impl VisualApp {
                     vivid: rgba(f.palette[0]),
                     mid: rgba(f.palette[1]),
                     dark: rgba(f.palette[2]),
-                    art_size: backdrop
-                        .as_ref()
-                        .map_or([1.0, 1.0], |(_, p)| p.size.map(|v| v as f32)),
+                    art_size: size_of(backdrop.as_ref()),
                     has_art: if backdrop.is_some() { 1.0 } else { 0.0 },
                     srgb_target: 0.0, // filled in by the callback
+                    prev_size: size_of(prev.as_ref().map(|(b, _)| b)),
+                    prev_has_art: prev.as_ref().map_or(0.0, |(_, alpha)| *alpha),
+                    fade: f.fade,
                 },
                 art: backdrop,
+                prev: prev.map(|(b, _)| b),
             },
         ));
 
@@ -654,16 +762,13 @@ impl VisualApp {
             color: Color32::from_black_alpha(170),
         };
         ui.painter().add(shadow.as_shape(rect, radius));
-        match self.textures.as_ref().and_then(|t| t.cover.as_ref()) {
-            Some(tex) => {
-                egui::Image::from_texture(SizedTexture::from_handle(tex))
-                    .corner_radius(radius)
-                    .paint_at(ui, rect);
-            }
-            None => {
-                ui.painter()
-                    .rect_filled(rect, radius, Color32::from_white_alpha(18));
-            }
+        ui.painter()
+            .rect_filled(rect, radius, Color32::from_white_alpha(18));
+        for (tex, alpha) in self.art.layers(|t| t.cover.as_ref()).into_iter().flatten() {
+            egui::Image::from_texture(SizedTexture::from_handle(tex))
+                .corner_radius(radius)
+                .tint(Color32::WHITE.gamma_multiply(alpha))
+                .paint_at(ui, rect);
         }
     }
 
@@ -681,11 +786,8 @@ impl VisualApp {
         let artist_size = layout.title_size * 0.5;
         let photo_size = artist_size * 1.5;
         let artist = np.track.artist.clone().unwrap_or_default();
-        let has_photo = self
-            .textures
-            .as_ref()
-            .and_then(|t| t.photo.as_ref())
-            .is_some();
+        let photos = self.art.layers(|t| t.photo.as_ref());
+        let has_photo = photos.iter().any(Option::is_some);
         let artist_indent = if has_photo {
             photo_size + artist_size * 0.5
         } else {
@@ -727,7 +829,7 @@ impl VisualApp {
         );
         y += title.size().y + gap;
 
-        if let Some(photo) = self.textures.as_ref().and_then(|t| t.photo.as_ref()) {
+        for (photo, alpha) in photos.into_iter().flatten() {
             let rect = Rect::from_min_size(
                 Pos2::new(layout.text_left, y + (artist_row - photo_size) / 2.0),
                 Vec2::splat(photo_size),
@@ -735,6 +837,7 @@ impl VisualApp {
             egui::Image::from_texture(SizedTexture::from_handle(photo))
                 .uv(square_crop(photo.size_vec2()))
                 .corner_radius(photo_size / 2.0)
+                .tint(Color32::WHITE.gamma_multiply(alpha))
                 .paint_at(ui, rect);
         }
         painter.galley(
@@ -1029,6 +1132,10 @@ fn square_crop(size: Vec2) -> Rect {
     let side = size.x.min(size.y);
     let (w, h) = (side / size.x, side / size.y);
     Rect::from_min_size(Pos2::new((1.0 - w) / 2.0, (1.0 - h) / 2.0), Vec2::new(w, h))
+}
+
+fn mix_palette(from: [[f32; 3]; 3], to: [[f32; 3]; 3], t: f32) -> [[f32; 3]; 3] {
+    std::array::from_fn(|i| std::array::from_fn(|c| from[i][c] + (to[i][c] - from[i][c]) * t))
 }
 
 fn rgba(c: [f32; 3]) -> [f32; 4] {

@@ -13,11 +13,16 @@ struct Uniforms {
     has_art: f32,
     // 1.0 when the render target applies sRGB encoding itself.
     srgb_target: f32,
+    // The previous song's artwork, fading out while `fade` goes 0 -> 1.
+    prev_size: vec2<f32>,
+    prev_has_art: f32,
+    fade: f32,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var art_tex: texture_2d<f32>;
 @group(0) @binding(2) var art_smp: sampler;
+@group(0) @binding(3) var prev_tex: texture_2d<f32>;
 
 @vertex
 fn vs_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4<f32> {
@@ -57,6 +62,19 @@ fn fbm(p_in: vec2<f32>) -> f32 {
     return value;
 }
 
+// Artwork of `size`, scaled to cover the screen, slowly breathing and warped.
+fn art_uv(uv: vec2<f32>, aspect: f32, size: vec2<f32>, warp: vec2<f32>) -> vec2<f32> {
+    let art_aspect = size.x / max(size.y, 1.0);
+    var auv = uv - 0.5;
+    if (aspect > art_aspect) {
+        auv.y *= art_aspect / aspect;
+    } else {
+        auv.x *= aspect / art_aspect;
+    }
+    let zoom = 1.12 + 0.04 * sin(u.time * 0.08) + 0.01 * u.pulse;
+    return auv / zoom + 0.5 + warp;
+}
+
 @fragment
 fn fs_main(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
     let res = u.resolution;
@@ -73,23 +91,19 @@ fn fs_main(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
     );
     let warp = (r - 0.5) * (0.12 + 0.03 * u.pulse);
 
-    // Artwork, scaled to cover the screen, slowly breathing and warped.
-    let art_aspect = u.art_size.x / max(u.art_size.y, 1.0);
-    var auv = uv - 0.5;
-    if (aspect > art_aspect) {
-        auv.y *= art_aspect / aspect;
-    } else {
-        auv.x *= aspect / art_aspect;
-    }
-    let zoom = 1.12 + 0.04 * sin(u.time * 0.08) + 0.01 * u.pulse;
-    auv = auv / zoom + 0.5 + warp;
-    let art = textureSample(art_tex, art_smp, auv).rgb;
+    // Crossfade from the previous artwork to the current one.
+    let current = textureSample(art_tex, art_smp, art_uv(uv, aspect, u.art_size, warp)).rgb;
+    let previous = textureSample(prev_tex, art_smp, art_uv(uv, aspect, u.prev_size, warp)).rgb;
+    let w_current = u.has_art * u.fade;
+    let w_previous = u.prev_has_art * (1.0 - u.fade);
+    let art_amount = w_current + w_previous;
+    let art = (current * w_current + previous * w_previous) / max(art_amount, 0.0001);
 
     // Gradient flow in the palette colors.
     let f = fbm(p * 1.1 + 2.5 * r + vec2<f32>(t, -t));
     var col = mix(u.dark.rgb, u.mid.rgb, smoothstep(0.25, 0.85, f));
     col = mix(col, u.vivid.rgb, smoothstep(0.55, 0.95, r.x) * 0.7);
-    col = mix(col, art, u.has_art * 0.6);
+    col = mix(col, art, art_amount * 0.6);
 
     // Beat glow from the center, vignette, and room for the foreground text.
     let d = length(p);
