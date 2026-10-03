@@ -8,6 +8,7 @@ mod pipeline;
 mod settings;
 mod setup;
 mod ui;
+mod update;
 
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -147,6 +148,7 @@ fn main() -> ExitCode {
     }
     let settings = Arc::new(std::sync::Mutex::new(settings));
     cache::trim_in_background();
+    update::remove_previous();
 
     let scene = SharedScene::default();
     let pipeline_scene = Arc::clone(&scene);

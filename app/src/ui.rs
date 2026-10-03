@@ -19,6 +19,7 @@ use crate::background::{self, Background, Uniforms};
 use crate::pipeline::SharedScene;
 use crate::settings::SharedSettings;
 use crate::setup::{self, BRAND_BLUE};
+use crate::update::{self, SharedUpdate};
 
 /// How long the lyrics take to scroll to the next line.
 const LYRIC_SCROLL: Duration = Duration::from_millis(450);
@@ -128,6 +129,9 @@ pub struct VisualApp {
     wake_origin: Vec<Option<Pos2>>,
     /// Screensaver: last time the main window was pushed into fullscreen.
     fullscreen_retry: Instant,
+    /// `None` in the screensaver, which never updates itself.
+    update: Option<SharedUpdate>,
+    update_announced: bool,
 }
 
 /// Screensaver: input right after start is the window settling, not the user.
@@ -209,7 +213,14 @@ impl VisualApp {
         } else {
             Vec::new()
         };
+        let update = (mode == Mode::Window).then(|| {
+            let update = SharedUpdate::default();
+            update::check_in_background(Arc::clone(&update));
+            update
+        });
         Self {
+            update,
+            update_announced: false,
             scene,
             settings,
             settings_open,
@@ -335,6 +346,7 @@ impl eframe::App for VisualApp {
         } else {
             self.handle_keys(&ctx);
         }
+        self.announce_update();
 
         let frame = self.prepare_frame(&ctx);
         // With a second screen the content is split: cover and titles here,
@@ -363,6 +375,7 @@ impl eframe::App for VisualApp {
                 &frame.devices,
                 frame.audio.as_ref(),
                 self.logo.as_ref(),
+                self.update.as_ref(),
             );
             if !keep_open {
                 self.close_settings();
@@ -680,6 +693,26 @@ impl VisualApp {
         );
         if wake {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+
+    /// Mentions a new version once; the settings panel has the button.
+    fn announce_update(&mut self) {
+        if self.update_announced {
+            return;
+        }
+        let available = self
+            .update
+            .as_ref()
+            .and_then(|u| match &*u.lock().unwrap() {
+                update::Status::Available(release) => Some(release.version.clone()),
+                _ => None,
+            });
+        if let Some(version) = available {
+            self.update_announced = true;
+            self.show_toast(&format!(
+                "Je tu nová verze {version} · aktualizuješ v nastavení (Ctrl+S)"
+            ));
         }
     }
 

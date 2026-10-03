@@ -1,6 +1,8 @@
 //! The setup panel: shown on first run, and any time later with Ctrl+S.
 //! Every change is saved immediately.
 
+use std::sync::Arc;
+
 use eframe::egui::{
     self, Align, Align2, Color32, Layout, Pos2, Rect, RichText, TextureHandle, Vec2,
     load::SizedTexture,
@@ -9,6 +11,7 @@ use mv_audio::{Capture, Input};
 use mv_core::{Device, PlaybackState};
 
 use crate::settings::{AudioMode, Settings, SharedSettings};
+use crate::update::{self, SharedUpdate, Status};
 
 /// The dot in the OZBEAT logo.
 pub const BRAND_BLUE: Color32 = Color32::from_rgb(0x2D, 0x8C, 0xFF);
@@ -27,6 +30,7 @@ pub fn show(
     devices: &[Device],
     audio: Option<&Capture>,
     logo: Option<&TextureHandle>,
+    update: Option<&SharedUpdate>,
 ) -> bool {
     let before = settings.lock().unwrap().clone();
     let mut s = before.clone();
@@ -71,7 +75,12 @@ pub fn show(
             let max_height = (ctx.content_rect().height() - 300.0).max(160.0);
             egui::ScrollArea::vertical()
                 .max_height(max_height)
-                .show(ui, |ui| options(ui, &mut s, devices, audio));
+                .show(ui, |ui| {
+                    options(ui, &mut s, devices, audio);
+                    if let Some(update) = update {
+                        update_section(ui, update);
+                    }
+                });
 
             ui.add_space(16.0);
             ui.horizontal(|ui| {
@@ -153,6 +162,67 @@ fn options(ui: &mut egui::Ui, s: &mut Settings, devices: &[Device], audio: Optio
         ui.add(egui::Slider::new(&mut s.intensity, 0.0..=1.0).show_value(false));
         ui.label(RichText::new("Výrazné").weak());
     });
+}
+
+/// The installed version and, when there is a newer one, the update button.
+fn update_section(ui: &mut egui::Ui, shared: &SharedUpdate) {
+    let current = update::CURRENT;
+    section(ui, "Aktualizace", &format!("Máš verzi {current}."));
+    let status = shared.lock().unwrap().clone();
+    let release = match status {
+        Status::Checking => {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label(RichText::new("Zjišťuji, jestli je nová verze…").weak());
+            });
+            None
+        }
+        Status::UpToDate => {
+            ui.label(RichText::new("Máš nejnovější verzi.").weak());
+            None
+        }
+        Status::Available(release) => {
+            ui.label(format!("Je dostupná verze {}.", release.version));
+            Some(release)
+        }
+        Status::Installing => {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label("Stahuji a instaluji novou verzi…");
+            });
+            None
+        }
+        Status::Restarting => {
+            ui.label("Hotovo, spouštím novou verzi…");
+            None
+        }
+        Status::Failed(error, release) => {
+            ui.label(
+                RichText::new(format!("Aktualizace se nepovedla: {error}"))
+                    .small()
+                    .color(Color32::from_rgb(0xE8, 0xB0, 0x4A)),
+            );
+            Some(release)
+        }
+    };
+    if let Some(release) = release {
+        let button = egui::Button::new(
+            RichText::new("Aktualizovat a restartovat")
+                .strong()
+                .color(Color32::WHITE),
+        )
+        .fill(BRAND_BLUE)
+        .corner_radius(10.0)
+        .min_size(Vec2::new(0.0, 36.0));
+        if ui.add(button).clicked() {
+            update::install_in_background(Arc::clone(shared), release, ui.ctx().clone());
+        }
+        ui.label(
+            RichText::new("Stáhne novou verzi, nahradí tuhle a spustí ji znovu.")
+                .small()
+                .weak(),
+        );
+    }
 }
 
 fn section(ui: &mut egui::Ui, title: &str, hint: &str) {
