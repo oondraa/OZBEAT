@@ -13,6 +13,7 @@ mod lrclib;
 pub mod matching;
 
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use mv_core::Track;
@@ -93,14 +94,14 @@ impl Enricher {
         }
     }
 
-    /// `preview` gets Deezer's cover and artist photo as soon as they are known,
-    /// so artwork can show up before the slower lookups (iTunes, lyrics, artist
-    /// art) finish. It is not called when Deezer has nothing.
+    /// `progress` gets what is known so far each time Deezer's cover and photo
+    /// or the lyrics arrive, so they can show before the slower lookups
+    /// (iTunes, artist art) finish. The returned result is the complete one.
     pub async fn enrich(
         &self,
         track: &Track,
         duration: Option<Duration>,
-        preview: impl FnOnce(Enrichment),
+        progress: impl Fn(Enrichment) + Sync,
     ) -> Enrichment {
         let mut out = Enrichment::default();
         let Some(artist) = track
@@ -116,18 +117,29 @@ impl Enricher {
         let title = track.title.as_str();
         let http = &self.http;
 
+        let so_far = Mutex::new(Enrichment::default());
+        let report = |add: &dyn Fn(&mut Enrichment)| {
+            let mut so_far = so_far.lock().unwrap();
+            add(&mut so_far);
+            progress(so_far.clone());
+        };
         let deezer = async {
             let found = deezer::search(http, artist, title).await;
             let Ok(Some(found)) = found else {
                 return (found, None);
             };
-            let mut early = Enrichment::default();
-            add_deezer_images(&mut early.images, &found);
-            if !early.images.is_empty() {
-                preview(early);
+            if found.cover.is_some() || found.artist_picture.is_some() {
+                report(&|e| add_deezer_images(&mut e.images, &found));
             }
             let bpm = deezer::bpm(http, found.id).await;
             (Ok(Some(found)), bpm)
+        };
+        let lyrics = async {
+            let lyrics = lrclib::lookup(http, artist, title, duration).await;
+            if let Ok(Some(found)) = &lyrics {
+                report(&|e| e.lyrics = Some(found.clone()));
+            }
+            lyrics
         };
         let ((deezer, bpm), itunes, lyrics, artist_art) = tokio::join!(
             deezer,
@@ -138,7 +150,7 @@ impl Enricher {
                 title,
                 track.album.as_deref()
             ),
-            lrclib::lookup(http, artist, title, duration),
+            lyrics,
             self.artist_art(artist),
         );
         let deezer = ok_or_note(deezer, "deezer", &mut out.problems);
