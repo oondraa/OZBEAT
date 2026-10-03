@@ -32,7 +32,12 @@ pub struct Art {
 
 pub fn build(cover: Option<PathBuf>, photo: Option<PathBuf>, background: Option<PathBuf>) -> Art {
     static NEXT_ID: AtomicU64 = AtomicU64::new(1);
-    let [cover, photo, background] = [cover, photo, background].map(|p| p.and_then(decode));
+    // Decoding a large JPEG is the slow part; do the three side by side.
+    let [cover, photo, background] = std::thread::scope(|s| {
+        [cover, photo, background]
+            .map(|p| s.spawn(|| p.and_then(decode)))
+            .map(|handle| handle.join().ok().flatten())
+    });
 
     // A real wide background beats a stretched square cover.
     let backdrop = background.as_ref().or(cover.as_ref()).or(photo.as_ref());

@@ -54,12 +54,13 @@ struct TrackDetail {
 }
 
 pub(crate) struct Found {
+    /// Deezer track id, for [`bpm`].
+    pub id: u64,
     pub artist_picture: Option<String>,
     pub cover: Option<String>,
-    pub bpm: Option<f32>,
 }
 
-pub(crate) async fn lookup(
+pub(crate) async fn search(
     http: &Http,
     artist: &str,
     title: &str,
@@ -84,26 +85,27 @@ pub(crate) async fn lookup(
     else {
         return Ok(None);
     };
+    Ok(Some(Found {
+        id: track.id,
+        artist_picture: track.artist.picture_xl.map(display_size),
+        cover: track.album.cover_xl.map(display_size),
+    }))
+}
 
-    // BPM is only on the track detail and often 0 (= unknown); a miss here is fine.
-    let detail_url = Url::parse(&format!("{API}/track/{}", track.id)).expect("valid url");
-    let bpm = match http.get_text(&detail_url, &POLICY).await {
+/// BPM is only on the track detail and often 0 (= unknown); a miss here is fine.
+pub(crate) async fn bpm(http: &Http, id: u64) -> Option<f32> {
+    let url = Url::parse(&format!("{API}/track/{id}")).expect("valid url");
+    match http.get_text(&url, &POLICY).await {
         Ok(Some(body)) => serde_json::from_str::<TrackDetail>(&body)
             .ok()
             .map(|d| d.bpm),
         _ => None,
     }
-    .filter(|bpm| *bpm > 0.0);
-
-    Ok(Some(Found {
-        artist_picture: track.artist.picture_xl.map(original_size),
-        cover: track.album.cover_xl.map(original_size),
-        bpm,
-    }))
+    .filter(|bpm| *bpm > 0.0)
 }
 
-/// `*_xl` URLs are 1000x1000; asking the CDN for more returns the original upload
-/// (up to its real size, e.g. 1200x1200).
-fn original_size(url: String) -> String {
-    url.replace("/1000x1000-", "/1900x1900-")
+/// `*_xl` URLs are 1000x1000; the CDN scales to the size asked for, up to the
+/// original upload (e.g. 1200x1200). The app shows covers at most 1600px.
+fn display_size(url: String) -> String {
+    url.replace("/1000x1000-", "/1600x1600-")
 }

@@ -65,9 +65,12 @@ pub async fn run(opts: Options, scene: SharedScene, settings: SharedSettings) {
 
     let enricher = Arc::new(Enricher::new(mv_enrich::Config::from_env()));
     let (enriched_tx, mut enriched_rx) = mpsc::unbounded_channel::<(String, Arc<Enrichment>)>();
-    let (art_tx, mut art_rx) = mpsc::unbounded_channel::<(String, Arc<Art>)>();
+    let (art_tx, mut art_rx) = mpsc::unbounded_channel::<(u64, (String, Arc<Art>))>();
     let mut lookups = Lookups::default();
     let mut art: Option<(String, Arc<Art>)> = None;
+    // Art builds are numbered so a slow early build can't replace a later one.
+    let mut art_urls: Option<(String, ArtUrls)> = None;
+    let (mut art_requested, mut art_shown) = (0, 0);
 
     let mut fetcher: Option<Arc<VideoFetcher>> = None;
     let (video_tx, mut video_rx) = mpsc::unbounded_channel::<(String, Outcome)>();
@@ -87,10 +90,27 @@ pub async fn run(opts: Options, scene: SharedScene, settings: SharedSettings) {
                 }
             },
             Some((key, enrichment)) = enriched_rx.recv() => {
-                spawn_art(key.clone(), Arc::clone(&enrichment), Arc::clone(&enricher), art_tx.clone());
+                // A song we have since moved on from.
+                if lookups.requested.as_ref() != Some(&key) {
+                    continue;
+                }
+                let mut urls = ArtUrls::of(&enrichment);
+                if let Some((_, shown)) = art_urls.as_ref().filter(|(k, _)| *k == key) {
+                    urls = urls.keeping(shown);
+                }
+                if art_urls.as_ref().is_none_or(|(k, u)| *k != key || *u != urls) {
+                    art_requested += 1;
+                    spawn_art(art_requested, key.clone(), urls.clone(), Arc::clone(&enricher), art_tx.clone());
+                    art_urls = Some((key.clone(), urls));
+                }
                 lookups.done = Some((key, enrichment));
             }
-            Some(loaded) = art_rx.recv() => art = Some(loaded),
+            Some((seq, loaded)) = art_rx.recv() => {
+                if seq > art_shown {
+                    art_shown = seq;
+                    art = Some(loaded);
+                }
+            }
             Some((key, outcome)) = video_rx.recv() => {
                 videos.in_flight = None;
                 videos.done = Some((key, outcome));
@@ -201,16 +221,45 @@ impl AudioInputs {
     }
 }
 
-/// Downloads the best cover, photo and background, then decodes them off the async threads.
+/// The images one [`Art`] is built from.
+#[derive(Clone, Default, PartialEq)]
+struct ArtUrls {
+    cover: Option<String>,
+    photo: Option<String>,
+    background: Option<String>,
+}
+
+impl ArtUrls {
+    fn of(enrichment: &Enrichment) -> Self {
+        let url = |kind| enrichment.best(kind).map(|i| i.url.clone());
+        Self {
+            cover: url(ImageKind::Cover),
+            photo: url(ImageKind::ArtistPhoto),
+            background: url(ImageKind::Background),
+        }
+    }
+
+    /// Keeps the images already on screen: a better match that arrives later
+    /// only fills the gaps instead of swapping a picture mid-song.
+    fn keeping(self, shown: &Self) -> Self {
+        Self {
+            cover: shown.cover.clone().or(self.cover),
+            photo: shown.photo.clone().or(self.photo),
+            background: shown.background.clone().or(self.background),
+        }
+    }
+}
+
+/// Downloads the cover, photo and background, then decodes them off the async threads.
 fn spawn_art(
+    seq: u64,
     key: String,
-    enrichment: Arc<Enrichment>,
+    urls: ArtUrls,
     enricher: Arc<Enricher>,
-    tx: mpsc::UnboundedSender<(String, Arc<Art>)>,
+    tx: mpsc::UnboundedSender<(u64, (String, Arc<Art>))>,
 ) {
     tokio::spawn(async move {
-        let fetch = |kind: ImageKind| {
-            let url = enrichment.best(kind).map(|i| i.url.clone());
+        let fetch = |url: Option<String>| {
             let enricher = &enricher;
             async move {
                 match enricher.image(&url?).await {
@@ -222,15 +271,12 @@ fn spawn_art(
                 }
             }
         };
-        let (cover, photo, background) = tokio::join!(
-            fetch(ImageKind::Cover),
-            fetch(ImageKind::ArtistPhoto),
-            fetch(ImageKind::Background),
-        );
+        let (cover, photo, background) =
+            tokio::join!(fetch(urls.cover), fetch(urls.photo), fetch(urls.background));
         if let Ok(art) =
             tokio::task::spawn_blocking(move || art::build(cover, photo, background)).await
         {
-            let _ = tx.send((key, Arc::new(art)));
+            let _ = tx.send((seq, (key, Arc::new(art))));
         }
     });
 }
@@ -266,7 +312,10 @@ impl Lookups {
         let (key, track, duration) = (key.clone(), np.track.clone(), np.duration);
         let (enricher, tx) = (Arc::clone(enricher), tx.clone());
         tokio::spawn(async move {
-            let enrichment = enricher.enrich(&track, duration).await;
+            let preview = |early| {
+                let _ = tx.send((key.clone(), Arc::new(early)));
+            };
+            let enrichment = enricher.enrich(&track, duration, preview).await;
             let _ = tx.send((key, Arc::new(enrichment)));
         });
     }
