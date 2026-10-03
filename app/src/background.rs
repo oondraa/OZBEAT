@@ -19,6 +19,11 @@ pub struct Uniforms {
     pub art_size: [f32; 2],
     pub has_art: f32,
     pub srgb_target: f32,
+    pub prev_size: [f32; 2],
+    /// How visible the previous artwork is before it fades (0 = not at all).
+    pub prev_has_art: f32,
+    /// 0 -> 1 while the previous artwork gives way to the current one.
+    pub fade: f32,
 }
 
 /// One frame's worth of background: parameters plus the artwork to show.
@@ -26,6 +31,8 @@ pub struct Background {
     pub uniforms: Uniforms,
     /// Art id + blurred picture; uploaded to the GPU only when the id changes.
     pub art: Option<(u64, Arc<Picture>)>,
+    /// The artwork fading out.
+    pub prev: Option<(u64, Arc<Picture>)>,
 }
 
 struct Resources {
@@ -34,7 +41,11 @@ struct Resources {
     layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     bind_group: wgpu::BindGroup,
-    art_id: Option<u64>,
+    /// Uploaded artwork by art id: the current and the previous one.
+    textures: Vec<(u64, wgpu::TextureView)>,
+    placeholder: wgpu::TextureView,
+    /// Art ids (current, previous) in `bind_group`.
+    bound: (Option<u64>, Option<u64>),
     srgb_target: bool,
 }
 
@@ -73,6 +84,16 @@ pub fn init(render_state: &egui_wgpu::RenderState) {
                 binding: 2,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
                 count: None,
             },
         ],
@@ -127,17 +148,20 @@ pub fn init(render_state: &egui_wgpu::RenderState) {
         ..Default::default()
     });
 
-    let placeholder = Picture {
-        size: [1, 1],
-        rgba: vec![0, 0, 0, 255],
-    };
-    let bind_group = art_bind_group(
+    let placeholder = upload(
         device,
         &render_state.queue,
+        &Picture {
+            size: [1, 1],
+            rgba: vec![0, 0, 0, 255],
+        },
+    );
+    let bind_group = art_bind_group(
+        device,
         &layout,
         &uniforms,
         &sampler,
-        &placeholder,
+        [&placeholder, &placeholder],
     );
 
     render_state
@@ -150,19 +174,14 @@ pub fn init(render_state: &egui_wgpu::RenderState) {
             layout,
             sampler,
             bind_group,
-            art_id: None,
+            textures: Vec::new(),
+            placeholder,
+            bound: (None, None),
             srgb_target: render_state.target_format.is_srgb(),
         });
 }
 
-fn art_bind_group(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    layout: &wgpu::BindGroupLayout,
-    uniforms: &wgpu::Buffer,
-    sampler: &wgpu::Sampler,
-    picture: &Picture,
-) -> wgpu::BindGroup {
+fn upload(device: &wgpu::Device, queue: &wgpu::Queue, picture: &Picture) -> wgpu::TextureView {
     // Non-sRGB format on purpose: the shader works in sRGB-encoded values.
     let texture = device.create_texture_with_data(
         queue,
@@ -183,7 +202,17 @@ fn art_bind_group(
         wgpu::util::TextureDataOrder::LayerMajor,
         &picture.rgba,
     );
-    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    texture.create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+/// Binds the current (`art[0]`) and the previous (`art[1]`) artwork.
+fn art_bind_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    uniforms: &wgpu::Buffer,
+    sampler: &wgpu::Sampler,
+    art: [&wgpu::TextureView; 2],
+) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("background"),
         layout,
@@ -194,11 +223,15 @@ fn art_bind_group(
             },
             wgpu::BindGroupEntry {
                 binding: 1,
-                resource: wgpu::BindingResource::TextureView(&view),
+                resource: wgpu::BindingResource::TextureView(art[0]),
             },
             wgpu::BindGroupEntry {
                 binding: 2,
                 resource: wgpu::BindingResource::Sampler(sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::TextureView(art[1]),
             },
         ],
     })
@@ -217,19 +250,30 @@ impl CallbackTrait for Background {
             return Vec::new();
         };
 
-        let art_id = self.art.as_ref().map(|(id, _)| *id);
-        if art_id != res.art_id {
-            if let Some((_, picture)) = &self.art {
-                res.bind_group = art_bind_group(
-                    device,
-                    queue,
-                    &res.layout,
-                    &res.uniforms,
-                    &res.sampler,
-                    picture,
-                );
+        let id = |art: &Option<(u64, Arc<Picture>)>| art.as_ref().map(|(id, _)| *id);
+        let wanted = (id(&self.art), id(&self.prev));
+        if wanted != res.bound {
+            for (id, picture) in [&self.art, &self.prev].into_iter().flatten() {
+                if !res.textures.iter().any(|(t, _)| t == id) {
+                    res.textures.push((*id, upload(device, queue, picture)));
+                }
             }
-            res.art_id = art_id;
+            res.textures
+                .retain(|(t, _)| Some(*t) == wanted.0 || Some(*t) == wanted.1);
+            let view = |id: Option<u64>| {
+                res.textures
+                    .iter()
+                    .find(|(t, _)| Some(*t) == id)
+                    .map_or(&res.placeholder, |(_, v)| v)
+            };
+            res.bind_group = art_bind_group(
+                device,
+                &res.layout,
+                &res.uniforms,
+                &res.sampler,
+                [view(wanted.0), view(wanted.1)],
+            );
+            res.bound = wanted;
         }
 
         let mut uniforms = self.uniforms;
