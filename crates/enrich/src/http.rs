@@ -143,13 +143,16 @@ impl Http {
     }
 
     /// Downloads a file once and keeps it: image URLs are content-addressed,
-    /// so a cached copy never goes stale.
+    /// so a cached copy never goes stale. A cached copy's modified time is
+    /// bumped on every use, so cache trimming removes the least used first.
     pub async fn get_file(&self, url: &Url, policy: &Policy) -> Result<PathBuf, FetchError> {
         let path = self
             .cache_dir
             .join("files")
             .join(format!("{:016x}", fnv1a(url.as_str())));
         if tokio::fs::try_exists(&path).await.unwrap_or(false) {
+            let touched = path.clone();
+            tokio::task::spawn_blocking(move || touch(&touched));
             return Ok(path);
         }
         let bytes = self
@@ -268,6 +271,14 @@ impl Http {
             let _ = tokio::fs::rename(&tmp, &path).await;
         }
     }
+}
+
+/// Best effort: a file that is not touched is only trimmed a little sooner.
+pub(crate) fn touch(path: &std::path::Path) {
+    let _ = std::fs::File::options()
+        .write(true)
+        .open(path)
+        .and_then(|f| f.set_modified(SystemTime::now()));
 }
 
 fn unix_now() -> u64 {

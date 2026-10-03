@@ -195,7 +195,13 @@ pub fn thumbnail_dir() -> PathBuf {
 fn save(hash: u64, bytes: &[u8]) -> Option<String> {
     let dir = thumbnail_dir();
     let path = dir.join(format!("{hash:016x}"));
-    if !path.exists() {
+    if path.exists() {
+        // Marks it as recently used for cache trimming.
+        let _ = std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .and_then(|f| f.set_modified(SystemTime::now()));
+    } else {
         let tmp = path.with_extension("tmp");
         let written = std::fs::create_dir_all(&dir)
             .and_then(|()| std::fs::write(&tmp, bytes))

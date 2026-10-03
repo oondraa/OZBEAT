@@ -3,6 +3,7 @@
 
 mod art;
 mod background;
+mod cache;
 mod pipeline;
 mod settings;
 mod setup;
@@ -145,6 +146,7 @@ fn main() -> ExitCode {
         settings.audio = audio;
     }
     let settings = Arc::new(std::sync::Mutex::new(settings));
+    cache::trim_in_background();
 
     let scene = SharedScene::default();
     let pipeline_scene = Arc::clone(&scene);
