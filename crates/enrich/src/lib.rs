@@ -195,6 +195,7 @@ impl Enricher {
     }
 
     /// Local path of a downloaded image (cached forever, fetched politely).
+    /// A `file:` URL (a player's own artwork) is used where it is.
     pub async fn image(&self, url: &str) -> Result<PathBuf, FetchError> {
         const POLICY: http::Policy = http::Policy {
             min_interval: Duration::from_millis(200),
@@ -202,6 +203,11 @@ impl Enricher {
             is_throttled: http::never_throttled,
         };
         let url = reqwest::Url::parse(url).map_err(|e| FetchError::Parse(e.to_string()))?;
+        if url.scheme() == "file" {
+            return url
+                .to_file_path()
+                .map_err(|()| FetchError::Parse(format!("not a local path: {url}")));
+        }
         self.http.get_file(&url, &POLICY).await
     }
 

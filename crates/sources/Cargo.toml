@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+dirs = "7.0.0"
 mdns-sd = "0.21.4"
 mv-core = { version = "0.1.0", path = "../core" }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
@@ -11,4 +12,4 @@ roxmltree = "0.21.1"
 tokio = { version = "1.53.1", features = ["rt", "sync", "time"] }
 
 [target."cfg(windows)".dependencies]
-windows = { version = "0.62.2", features = ["Media_Control", "Foundation", "Foundation_Collections"] }
+windows = { version = "0.62.2", features = ["Media_Control", "Foundation", "Foundation_Collections", "Storage_Streams"] }
