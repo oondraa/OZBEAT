@@ -2272,6 +2272,7 @@ dependencies = [
 name = "mv-sources"
 version = "0.1.0"
 dependencies = [
+ "dirs",
  "mdns-sd",
  "mv-core",
  "reqwest",

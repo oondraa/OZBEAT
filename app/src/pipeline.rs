@@ -65,12 +65,11 @@ pub async fn run(opts: Options, scene: SharedScene, settings: SharedSettings) {
 
     let enricher = Arc::new(Enricher::new(mv_enrich::Config::from_env()));
     let (enriched_tx, mut enriched_rx) = mpsc::unbounded_channel::<(String, Arc<Enrichment>)>();
-    let (art_tx, mut art_rx) = mpsc::unbounded_channel::<(u64, (String, Arc<Art>))>();
+    let (art_tx, mut art_rx) = mpsc::unbounded_channel::<(u64, ArtFor)>();
     let mut lookups = Lookups::default();
-    let mut art: Option<(String, Arc<Art>)> = None;
-    // Art builds are numbered so a slow early build can't replace a later one.
-    let mut art_urls: Option<(String, ArtUrls)> = None;
-    let (mut art_requested, mut art_shown) = (0, 0);
+    let mut art: Option<ArtFor> = None;
+    let mut art_plan = ArtPlan::default();
+    let mut art_shown = 0;
 
     let mut fetcher: Option<Arc<VideoFetcher>> = None;
     let (video_tx, mut video_rx) = mpsc::unbounded_channel::<(String, Outcome)>();
@@ -94,15 +93,9 @@ pub async fn run(opts: Options, scene: SharedScene, settings: SharedSettings) {
                 if lookups.requested.as_ref() != Some(&key) {
                     continue;
                 }
-                let mut urls = ArtUrls::of(&enrichment);
-                if let Some((_, shown)) = art_urls.as_ref().filter(|(k, _)| *k == key) {
-                    urls = urls.keeping(shown);
-                }
-                if art_urls.as_ref().is_none_or(|(k, u)| *k != key || *u != urls) {
-                    art_requested += 1;
-                    spawn_art(art_requested, key.clone(), urls.clone(), Arc::clone(&enricher), art_tx.clone());
-                    art_urls = Some((key.clone(), urls));
-                }
+                art_plan.track(&key);
+                art_plan.found(&enrichment);
+                art_plan.build(&enricher, &art_tx);
                 lookups.done = Some((key, enrichment));
             }
             Some((seq, loaded)) = art_rx.recv() => {
@@ -125,6 +118,9 @@ pub async fn run(opts: Options, scene: SharedScene, settings: SharedSettings) {
                 let youtube = fetcher.as_ref().filter(|_| settings.youtube);
 
                 if let Some((_, np)) = active {
+                    art_plan.track(&track_key(&np.track));
+                    art_plan.player = np.track.art_url.clone();
+                    art_plan.build(&enricher, &art_tx);
                     lookups.request(np, &enricher, &enriched_tx);
                     if let Some(fetcher) = youtube {
                         videos.request(np, fetcher, &video_tx);
@@ -239,8 +235,8 @@ impl ArtUrls {
         }
     }
 
-    /// Keeps the images already on screen: a better match that arrives later
-    /// only fills the gaps instead of swapping a picture mid-song.
+    /// Keeps the images found first: a better match that arrives later only
+    /// fills the gaps instead of swapping a picture mid-song.
     fn keeping(self, shown: &Self) -> Self {
         Self {
             cover: shown.cover.clone().or(self.cover),
@@ -250,13 +246,62 @@ impl ArtUrls {
     }
 }
 
+/// Picks the images for the current song and rebuilds the art when they change.
+#[derive(Default)]
+struct ArtPlan {
+    key: String,
+    /// The player's own cover. Shown at once, but it is often small, so a
+    /// cover found by the lookups replaces it.
+    player: Option<String>,
+    found: ArtUrls,
+    built: Option<ArtUrls>,
+    /// Numbers the builds, so a slow early one can't replace a later one.
+    seq: u64,
+}
+
+impl ArtPlan {
+    fn track(&mut self, key: &str) {
+        if self.key != key {
+            *self = Self {
+                key: key.to_owned(),
+                seq: self.seq,
+                ..Self::default()
+            };
+        }
+    }
+
+    fn found(&mut self, enrichment: &Enrichment) {
+        self.found = ArtUrls::of(enrichment).keeping(&self.found);
+    }
+
+    fn build(&mut self, enricher: &Arc<Enricher>, tx: &mpsc::UnboundedSender<(u64, ArtFor)>) {
+        let mut want = self.found.clone();
+        want.cover = want.cover.or_else(|| self.player.clone());
+        if want == ArtUrls::default() || self.built.as_ref() == Some(&want) {
+            return;
+        }
+        self.seq += 1;
+        spawn_art(
+            self.seq,
+            self.key.clone(),
+            want.clone(),
+            Arc::clone(enricher),
+            tx.clone(),
+        );
+        self.built = Some(want);
+    }
+}
+
+/// Art and the track key it belongs to.
+type ArtFor = (String, Arc<Art>);
+
 /// Downloads the cover, photo and background, then decodes them off the async threads.
 fn spawn_art(
     seq: u64,
     key: String,
     urls: ArtUrls,
     enricher: Arc<Enricher>,
-    tx: mpsc::UnboundedSender<(u64, (String, Arc<Art>))>,
+    tx: mpsc::UnboundedSender<(u64, ArtFor)>,
 ) {
     tokio::spawn(async move {
         let fetch = |url: Option<String>| {
