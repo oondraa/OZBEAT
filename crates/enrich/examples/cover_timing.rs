@@ -1,4 +1,4 @@
-//! Times how long a track takes until its cover is ready, with an empty cache.
+//! Times how long a track takes until its cover and lyrics are ready, with an empty cache.
 //!
 //! cargo run --release -p mv-enrich --example cover_timing
 
@@ -30,10 +30,18 @@ async fn main() {
         };
         let start = Instant::now();
         let early = Mutex::new(None);
-        let preview = |e: mv_enrich::Enrichment| {
-            *early.lock().unwrap() = Some((start.elapsed(), e));
+        let lyrics_at = Mutex::new(None);
+        let progress = |e: mv_enrich::Enrichment| {
+            let mut early = early.lock().unwrap();
+            if early.is_none() && e.best(ImageKind::Cover).is_some() {
+                *early = Some((start.elapsed(), e.clone()));
+            }
+            let mut lyrics_at = lyrics_at.lock().unwrap();
+            if lyrics_at.is_none() && e.lyrics.is_some() {
+                *lyrics_at = Some(start.elapsed());
+            }
         };
-        let enrichment = enricher.enrich(&track, None, preview).await;
+        let enrichment = enricher.enrich(&track, None, progress).await;
         let looked_up = start.elapsed();
 
         // The app downloads the preview's cover right away, while the rest is still looked up.
@@ -62,7 +70,13 @@ async fn main() {
             }
             None => "no cover".into(),
         };
-        println!("{artist} - {title}: first cover {first}, after all lookups {full}");
+        let lyrics = match lyrics_at.into_inner().unwrap() {
+            Some(at) => format!("{:.1}s", at.as_secs_f32()),
+            None => "none".into(),
+        };
+        println!(
+            "{artist} - {title}: first cover {first}, lyrics {lyrics}, after all lookups {full}"
+        );
     }
 }
 

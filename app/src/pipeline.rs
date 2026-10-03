@@ -312,10 +312,10 @@ impl Lookups {
         let (key, track, duration) = (key.clone(), np.track.clone(), np.duration);
         let (enricher, tx) = (Arc::clone(enricher), tx.clone());
         tokio::spawn(async move {
-            let preview = |early| {
-                let _ = tx.send((key.clone(), Arc::new(early)));
+            let progress = |so_far| {
+                let _ = tx.send((key.clone(), Arc::new(so_far)));
             };
-            let enrichment = enricher.enrich(&track, duration, preview).await;
+            let enrichment = enricher.enrich(&track, duration, progress).await;
             let _ = tx.send((key, Arc::new(enrichment)));
         });
     }
