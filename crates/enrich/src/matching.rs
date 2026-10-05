@@ -43,7 +43,8 @@ pub fn same_title(found: &str, wanted: &str) -> bool {
     !wanted.is_empty() && found == wanted
 }
 
-fn base_title(title: &str) -> &str {
+/// "Song (Remastered 2011)" -> "Song".
+pub fn base_title(title: &str) -> &str {
     let end = [" (", " [", " - "]
         .iter()
         .filter_map(|sep| title.find(sep))
