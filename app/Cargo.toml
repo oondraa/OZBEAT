@@ -15,10 +15,14 @@ mv-core = { version = "0.1.0", path = "../crates/core" }
 mv-enrich = { version = "0.1.0", path = "../crates/enrich" }
 mv-sources = { version = "0.1.0", path = "../crates/sources" }
 mv-video = { version = "0.1.0", path = "../crates/video" }
+raw-window-handle = "0.6.2"
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+
+[target."cfg(windows)".dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [target."cfg(windows)".build-dependencies]
 winresource = "0.1.31"

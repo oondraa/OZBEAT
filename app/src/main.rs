@@ -1,12 +1,16 @@
 // No console window behind the visualizer on Windows.
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
+mod anim;
 mod art;
 mod background;
+mod beam;
 mod cache;
+mod frameless;
 mod pipeline;
 mod settings;
 mod setup;
+mod titlebar;
 mod ui;
 mod update;
 
@@ -164,7 +168,9 @@ fn main() -> ExitCode {
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("OZBEAT")
         .with_inner_size([1280.0, 720.0])
-        .with_min_inner_size([640.0, 360.0]);
+        .with_min_inner_size([640.0, 360.0])
+        // The title bar is our own (titlebar.rs), fading out over the visuals.
+        .with_decorations(false);
     if mode == Mode::Screensaver {
         let displays = display_info::DisplayInfo::all().unwrap_or_default();
         if let Some(primary) = primary_monitor(&displays) {
