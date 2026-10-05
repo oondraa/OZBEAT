@@ -25,7 +25,7 @@
 Play music the way you normally do. OZBEAT notices it and fills the screen with it:
 
 - **Works with what you already use.** Spotify, YouTube in the browser, the Windows media player, and any app that shows up in the Windows volume / media controls. Also **BluOS** network speakers on your Wi-Fi.
-- **Synced lyrics** that scroll along with the song, when the song has them.
+- **Lyrics** that scroll along with the song, even for many songs Spotify has no lyrics for. When a song's lyrics come without timing, OZBEAT times them itself.
 - **Cover art and artist photos** as a soft, moving background.
 - **Reacts to the music.** Visuals swell with the sound instead of flashing.
 - **Two screens.** Cover on one, lyrics on the other.
@@ -63,7 +63,7 @@ Run `OZBEAT.exe` once before you use the screensaver, so your settings are ready
 
 **Nothing shows up.** Check that the music app shows its song in the Windows media controls (the box above the volume slider). If it doesn't show there, OZBEAT can't see it either. For BluOS speakers, the PC and the speaker must be on the same network.
 
-**No lyrics for a song.** Lyrics come from a free public database, and not every song is in it. OZBEAT then shows the title and artist instead.
+**No lyrics for a song.** Lyrics come from [LRCLIB](https://lrclib.net), a free community database. When a song is in it without timing, OZBEAT spreads the lines over the song itself, so the timing is an estimate. When the song isn't in it at all, OZBEAT shows the title and artist instead.
 
 **How do I update?** OZBEAT checks for a new version when it starts. If there is one, open the settings with `Ctrl+S` and click **Aktualizovat a restartovat**. It downloads the new version, checks it and restarts. This works from version 0.1.3 on; for older versions, download the exe again.
 
@@ -132,6 +132,8 @@ Když Windows ukáže hlášku **„Systém Windows ochránil váš počítač�
 3. V okně spořiče nastav, po kolika minutách se má spustit, a dej **OK**.
 
 Spořič zabere všechny monitory: na hlavním je obal a název, na druhém text. Ukončíš ho pohybem myši nebo klávesou.
+
+**Texty:** běží s písničkou, a to i u spousty písniček, ke kterým Spotify text nemá. Berou se z komunitní databáze [LRCLIB](https://lrclib.net). Když tam písnička je jen bez časování, OZBEAT si řádky rozloží sám, takže časování je odhad. Když tam není vůbec, ukáže se název a interpret.
 
 **Aktualizace:** když vyjde nová verze, otevři nastavení (`Ctrl+S`) a klikni na **Aktualizovat a restartovat**. Funguje to od verze 0.1.3, starší verzi stáhni znovu.
 
