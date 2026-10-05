@@ -14,11 +14,14 @@ use mv_core::{Device, NowPlaying, PlaybackState};
 use mv_enrich::Enrichment;
 
 use crate::Mode;
+use crate::anim::{Tween, ease_out_cubic};
 use crate::art::{Art, DEFAULT_PALETTE, Picture};
 use crate::background::{self, Background, Uniforms};
+use crate::beam;
 use crate::pipeline::SharedScene;
 use crate::settings::SharedSettings;
 use crate::setup::{self, BRAND_BLUE};
+use crate::titlebar::TitleBar;
 use crate::update::{self, SharedUpdate};
 
 /// How long the lyrics take to scroll to the next line.
@@ -27,8 +30,16 @@ const LYRIC_SCROLL: Duration = Duration::from_millis(450);
 const ART_FADE: Duration = Duration::from_millis(700);
 const TOAST_VISIBLE: Duration = Duration::from_millis(2400);
 const TOAST_FADE: Duration = Duration::from_millis(600);
+/// Opening and closing the settings panel.
+const SETTINGS_OPEN: Duration = Duration::from_millis(700);
+const SETTINGS_CLOSE: Duration = Duration::from_millis(180);
+/// The spark crossing to the second screen and switching it on (Ctrl+D).
+const MIRROR_OPEN: Duration = Duration::from_millis(1000);
+const MIRROR_CLOSE: Duration = Duration::from_millis(800);
+/// Frames the second window draws before it is shown and the transition starts.
+const MIRROR_READY: u32 = 3;
 
-const BOLD: &str = "bold";
+pub(crate) const BOLD: &str = "bold";
 const REGULAR: &str = "regular";
 /// Nicer system fonts when present; egui's built-in font is the fallback.
 const BOLD_FONTS: &[&str] = &[
@@ -107,8 +118,19 @@ pub struct VisualApp {
     scene: SharedScene,
     settings: SharedSettings,
     settings_open: bool,
-    /// Monitor index the visuals are mirrored to (Ctrl+D), if any.
+    /// Monitor index the visuals are mirrored to (Ctrl+D), if any. Stays
+    /// set while the mirror fades out after `mirror_on` went false.
     mirror: Option<usize>,
+    mirror_on: bool,
+    mirror_anim: Tween,
+    /// From the main window's monitor towards the mirror's, for the spark.
+    mirror_dir: Vec2,
+    /// Frames the mirror has drawn; it is shown only once it has a picture,
+    /// so a fresh window never flashes white.
+    mirror_frames: u32,
+    settings_anim: Tween,
+    /// Leaving fullscreen should maximize the window again.
+    restore_maximized: bool,
     toast: Option<(String, Instant)>,
     logo: Option<TextureHandle>,
     icon: Option<Arc<egui::IconData>>,
@@ -132,6 +154,8 @@ pub struct VisualApp {
     /// `None` in the screensaver, which never updates itself.
     update: Option<SharedUpdate>,
     update_announced: bool,
+    /// Our own title bar; `None` in the screensaver, which has no frame to replace.
+    title_bar: Option<TitleBar>,
 }
 
 /// Screensaver: input right after start is the window settling, not the user.
@@ -194,6 +218,7 @@ impl VisualApp {
     ) -> Self {
         install_fonts(&cc.egui_ctx);
         install_style(&cc.egui_ctx);
+        crate::frameless::install(cc);
         if let Some(render_state) = &cc.wgpu_render_state {
             background::init(render_state);
         }
@@ -221,10 +246,17 @@ impl VisualApp {
         Self {
             update,
             update_announced: false,
+            title_bar: (mode != Mode::Screensaver).then(TitleBar::new),
             scene,
             settings,
             settings_open,
             mirror: None,
+            mirror_on: false,
+            mirror_anim: Tween::new(MIRROR_OPEN, MIRROR_CLOSE),
+            mirror_dir: Vec2::X,
+            mirror_frames: 0,
+            settings_anim: Tween::new(SETTINGS_OPEN, SETTINGS_CLOSE),
+            restore_maximized: false,
             toast: None,
             logo: load_logo(&cc.egui_ctx),
             icon: crate::window_icon().map(Arc::new),
@@ -349,27 +381,65 @@ impl eframe::App for VisualApp {
         self.announce_update();
 
         let frame = self.prepare_frame(&ctx);
+        // Creating the second window stalls a few frames; start once it is up,
+        // so the animation doesn't jump ahead meanwhile.
+        self.mirror_anim
+            .set(self.mirror_on && self.mirror_frames >= MIRROR_READY);
+        let mirror = self.mirror_anim.progress();
+        if !self.mirror_on && mirror == 0.0 {
+            self.mirror = None;
+            self.mirror_frames = 0;
+        }
         // With a second screen the content is split: cover and titles here,
         // lyrics over there.
-        let content = if self.mirror.is_some() || !self.screens.is_empty() {
-            Content::CoverOnly
+        let (split, pull) = if self.screens.is_empty() {
+            let split = beam::split(mirror);
+            let rect = ui.max_rect();
+            let from = spark_origin(rect, &frame, split);
+            let accent = color(frame.palette[0]);
+            (
+                split,
+                beam::pull(rect, from, self.mirror_dir, mirror, accent),
+            )
         } else {
-            Content::Full
+            (1.0, None)
         };
-        self.draw_visual(ui, &frame, content);
+        self.settings_anim.set(self.settings_open);
+        let panel = self.settings_anim.progress();
+        // Behind the glass panel only the soft background shows: the sharp
+        // cover, titles and lyrics fade back, so the pane reads as frosted.
+        ui.scope(|ui| {
+            ui.multiply_opacity(1.0 - 0.95 * ease_out_cubic(panel));
+            self.draw_visual(ui, &frame, Content::Main { split, pull });
+        });
+        if self.mirror.is_some() {
+            beam::draw_outgoing(
+                ui.painter(),
+                ui.max_rect(),
+                spark_origin(ui.max_rect(), &frame, split),
+                self.mirror_dir,
+                mirror,
+                color(frame.palette[0]),
+            );
+        }
         if let Some(monitor) = self.mirror {
-            self.show_mirror(&ctx, monitor, &frame);
+            self.show_mirror(&ctx, monitor, &frame, mirror);
         }
         for slot in 0..self.screens.len() {
             self.show_screen(&ctx, slot, &frame);
         }
-        if self.settings_open {
-            // Dim the visuals so the panel reads well.
-            ui.painter()
-                .rect_filled(ui.max_rect(), 0.0, Color32::from_black_alpha(110));
+        if panel > 0.0 {
+            // Dim the visuals a little so the panel reads well.
+            ui.painter().rect_filled(
+                ui.max_rect(),
+                0.0,
+                Color32::from_black_alpha((70.0 * ease_out_cubic(panel)) as u8),
+            );
             let first_run = !self.settings.lock().unwrap().setup_done;
             let keep_open = setup::show(
                 &ctx,
+                panel,
+                self.settings_open,
                 &self.settings,
                 first_run,
                 &frame.devices,
@@ -377,13 +447,16 @@ impl eframe::App for VisualApp {
                 self.logo.as_ref(),
                 self.update.as_ref(),
             );
-            if !keep_open {
+            if !keep_open && self.settings_open {
                 self.close_settings();
             }
         }
         // Opened from the screensaver dialog: done once the settings close.
-        if self.mode == Mode::Configure && !self.settings_open {
+        if self.mode == Mode::Configure && !self.settings_open && panel == 0.0 {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        if let Some(bar) = &mut self.title_bar {
+            bar.show(&ctx, self.settings_open);
         }
         self.draw_toast(&ctx);
         ctx.request_repaint();
@@ -391,12 +464,16 @@ impl eframe::App for VisualApp {
 }
 
 /// What a window shows on top of the background.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy)]
 enum Content {
-    /// Cover, titles and lyrics (single screen).
-    Full,
-    /// Cover and titles, centered (main screen while mirroring).
-    CoverOnly,
+    /// Cover and titles. `split` (0 -> 1) is how far the lyrics have moved
+    /// to a second screen: at 0 they sit below the cover, at 1 they are gone
+    /// and the cover block is centered. While they go, `pull` pours them
+    /// into the Ctrl+D spark.
+    Main {
+        split: f32,
+        pull: Option<beam::Pull>,
+    },
     /// Big centered lyrics (second screen).
     LyricsOnly,
 }
@@ -549,22 +626,38 @@ impl VisualApp {
         });
 
         match content {
-            Content::Full | Content::CoverOnly => {
+            Content::Main { split, pull } => {
                 // Without lyrics below, the cover block moves to the middle.
-                let center = if content == Content::Full { 0.40 } else { 0.5 };
+                let center = egui::emath::lerp(0.40..=0.5, split);
                 let layout = Layout::new(rect, center);
                 self.draw_cover(ui, &layout, f.pulse);
                 self.draw_titles(ui, &layout, np);
-                if let (Content::Full, Some(lyrics), Some(scroll)) = (content, synced, scroll) {
-                    let size = (rect.height() * 0.045).clamp(20.0, 54.0);
-                    let center_y = rect.top() + rect.height() * 0.83;
-                    draw_lyrics(&painter, rect, lyrics, scroll, center_y, size);
+                // Once poured into the spark the lyrics stay gone, rather
+                // than coming back for the rest of the plain fade.
+                let visible = match pull {
+                    Some(pull) => !pull.done(),
+                    None => split < 1.0,
+                };
+                if let (true, Some(lyrics), Some(scroll)) = (visible, synced, scroll) {
+                    let mut painter = painter.clone();
+                    if pull.is_none() {
+                        painter.multiply_opacity(1.0 - split);
+                    }
+                    draw_lyrics(
+                        &painter,
+                        rect,
+                        lyrics,
+                        scroll,
+                        main_lyrics_y(rect),
+                        main_lyrics_size(rect),
+                        pull.as_ref(),
+                    );
                 }
             }
             Content::LyricsOnly => match (synced, scroll) {
                 (Some(lyrics), Some(scroll)) => {
                     let size = (rect.height() * 0.075).clamp(28.0, 96.0);
-                    draw_lyrics(&painter, rect, lyrics, scroll, rect.center().y, size);
+                    draw_lyrics(&painter, rect, lyrics, scroll, rect.center().y, size, None);
                 }
                 // No timed lyrics: show what plays rather than an empty screen.
                 _ => draw_caption(&painter, rect, np),
@@ -596,7 +689,43 @@ impl VisualApp {
             self.close_settings();
             return;
         }
-        handle_fullscreen(ctx, !self.settings_open);
+        // The title bar has its own double-click (maximize).
+        let on_bar = self
+            .title_bar
+            .as_ref()
+            .is_some_and(|bar| bar.under_pointer(ctx));
+        self.handle_fullscreen(ctx, !self.settings_open && !on_bar);
+    }
+
+    /// F11 or double-click toggles fullscreen, Esc leaves it. Double-click is
+    /// ignored while the settings panel is open (fast checkbox clicks).
+    fn handle_fullscreen(&mut self, ctx: &egui::Context, allow_double_click: bool) {
+        let (toggle, escape, is_fullscreen, maximized) = ctx.input(|i| {
+            (
+                i.key_pressed(egui::Key::F11)
+                    || (allow_double_click
+                        && i.pointer
+                            .button_double_clicked(egui::PointerButton::Primary)),
+                i.key_pressed(egui::Key::Escape),
+                i.viewport().fullscreen.unwrap_or(false),
+                i.viewport().maximized.unwrap_or(false),
+            )
+        });
+        if toggle && !is_fullscreen {
+            // winit keeps a frameless maximized window inside the work area,
+            // even in fullscreen: the taskbar stays and the picture squashes.
+            // So restore first, and maximize again on the way out.
+            self.restore_maximized = maximized;
+            if maximized {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
+            }
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
+        } else if (toggle || escape) && is_fullscreen {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+            if std::mem::take(&mut self.restore_maximized) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+            }
+        }
     }
 
     fn close_settings(&mut self) {
@@ -610,8 +739,8 @@ impl VisualApp {
 
     /// Ctrl+D: mirror the visuals fullscreen on the next monitor, or stop.
     fn toggle_mirror(&mut self, ctx: &egui::Context) {
-        if self.mirror.take().is_some() {
-            self.show_toast("Druhá obrazovka vypnuta");
+        if self.mirror_on {
+            self.mirror_on = false;
             return;
         }
         let displays = display_info::DisplayInfo::all().unwrap_or_default();
@@ -635,14 +764,26 @@ impl VisualApp {
             })
         });
         let next = current.map_or(1, |i| (i + 1) % displays.len());
+        let middle = |d: &display_info::DisplayInfo| {
+            Vec2::new(
+                d.x as f32 + d.width as f32 / 2.0,
+                d.y as f32 + d.height as f32 / 2.0,
+            )
+        };
+        self.mirror_dir = current
+            .map(|i| (middle(&displays[next]) - middle(&displays[i])).normalized())
+            .filter(|d| d.is_finite() && *d != Vec2::ZERO)
+            .unwrap_or(Vec2::X);
         self.mirror = Some(next);
-        self.show_toast("Vizuál i na druhé obrazovce · Ctrl+D vypne");
+        self.mirror_on = true;
     }
 
-    fn show_mirror(&mut self, ctx: &egui::Context, monitor: usize, frame: &FrameData) {
+    /// `shown` (0 -> 1) is the Ctrl+D transition, see `beam`.
+    fn show_mirror(&mut self, ctx: &egui::Context, monitor: usize, frame: &FrameData, shown: f32) {
         let mut builder = egui::ViewportBuilder::default()
             .with_title("OZBEAT")
-            .with_monitor(monitor);
+            .with_monitor(monitor)
+            .with_visible(self.mirror_frames >= MIRROR_READY);
         if let Some(icon) = &self.icon {
             builder = builder.with_icon(Arc::clone(icon));
         }
@@ -652,16 +793,24 @@ impl VisualApp {
             builder,
             |ui, _class| {
                 self.draw_visual(ui, frame, Content::LyricsOnly);
-                close = ui.input(|i| {
-                    i.viewport().close_requested()
-                        || i.key_pressed(egui::Key::Escape)
-                        || (i.modifiers.command && i.key_pressed(egui::Key::D))
-                });
+                let accent = color(frame.palette[0]);
+                beam::draw_incoming(ui.painter(), ui.max_rect(), self.mirror_dir, shown, accent);
+                let close_requested = ui.input(|i| i.viewport().close_requested());
+                if close_requested {
+                    // Fade out first; the window goes once that is done.
+                    ui.ctx()
+                        .send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                }
+                close = close_requested
+                    || ui.input(|i| {
+                        i.key_pressed(egui::Key::Escape)
+                            || (i.modifiers.command && i.key_pressed(egui::Key::D))
+                    });
             },
         );
-        if close {
-            self.mirror = None;
-            self.show_toast("Druhá obrazovka vypnuta");
+        self.mirror_frames = self.mirror_frames.saturating_add(1);
+        if close && self.mirror_on {
+            self.mirror_on = false;
         }
     }
 
@@ -684,7 +833,10 @@ impl VisualApp {
                 let content = if slot == 0 {
                     Content::LyricsOnly
                 } else {
-                    Content::Full
+                    Content::Main {
+                        split: 0.0,
+                        pull: None,
+                    }
                 };
                 self.draw_visual(ui, frame, content);
                 ui.ctx().set_cursor_icon(egui::CursorIcon::None);
@@ -944,9 +1096,36 @@ fn draw_idle(painter: &egui::Painter, rect: Rect, time: f32) {
     );
 }
 
+/// Lyrics under the cover on the main window: their size and current line.
+fn main_lyrics_size(rect: Rect) -> f32 {
+    (rect.height() * 0.045).clamp(20.0, 54.0)
+}
+
+fn main_lyrics_y(rect: Rect) -> f32 {
+    rect.top() + rect.height() * 0.83
+}
+
+/// Where the Ctrl+D spark gathers: on the current lyric line, or on the
+/// cover when there are no timed lyrics to pour into it.
+fn spark_origin(rect: Rect, f: &FrameData, split: f32) -> Pos2 {
+    let has_lyrics = !f.idle
+        && f.enrichment
+            .as_ref()
+            .and_then(|e| e.lyrics.as_ref())
+            .is_some_and(|l| !l.synced.is_empty());
+    if has_lyrics {
+        Pos2::new(rect.center().x, main_lyrics_y(rect))
+    } else {
+        Layout::new(rect, egui::emath::lerp(0.40..=0.5, split))
+            .cover
+            .center()
+    }
+}
+
 /// A scrolling column of lines centered on `scroll` (a fractional line index).
 /// Lines grow as they reach the center by crossfading two font sizes, which
 /// keeps the glyph atlas small compared to animating the size itself.
+/// With `pull` the letters pour into the Ctrl+D spark instead.
 fn draw_lyrics(
     painter: &egui::Painter,
     rect: Rect,
@@ -954,6 +1133,7 @@ fn draw_lyrics(
     scroll: f32,
     center_y: f32,
     size: f32,
+    pull: Option<&beam::Pull>,
 ) {
     let max_width = rect.width() * 0.9;
     let spacing = size * 1.3;
@@ -982,6 +1162,13 @@ fn draw_lyrics(
         }
 
         let pos = Pos2::new(rect.center().x, center_y + offset * spacing);
+        if let Some(pull) = pull {
+            let font = if emphasis >= 0.5 { &big } else { &small };
+            let font = fit_font(painter, &line.text, font, max_width);
+            let seed = (i as u32).wrapping_mul(7919);
+            draw_poured(painter, &line.text, &font, pos, alpha / 255.0, pull, seed);
+            continue;
+        }
         for (font, weight) in [(&big, emphasis), (&small, 1.0 - emphasis)] {
             let a = (alpha * weight) as u8;
             if a > 0 {
@@ -994,6 +1181,40 @@ fn draw_lyrics(
                     Color32::from_white_alpha(a),
                 );
             }
+        }
+    }
+}
+
+/// One lyric line, letter by letter, on its way into the Ctrl+D spark.
+fn draw_poured(
+    painter: &egui::Painter,
+    text: &str,
+    font: &FontId,
+    center: Pos2,
+    alpha: f32,
+    pull: &beam::Pull,
+    seed: u32,
+) {
+    let galley = painter.layout_no_wrap(text.to_owned(), font.clone(), Color32::WHITE);
+    let origin = center - galley.size() / 2.0;
+    for row in &galley.rows {
+        for (n, glyph) in row.glyphs.iter().enumerate() {
+            if glyph.chr.is_whitespace() {
+                continue;
+            }
+            let at = origin + row.pos.to_vec2() + glyph.logical_rect().center().to_vec2();
+            let Some(grain) = pull.grain(at, seed ^ n as u32) else {
+                continue;
+            };
+            // Sizes in 2 px steps keep the glyph atlas small.
+            let size = ((font.size * grain.scale / 2.0).round() * 2.0).max(6.0);
+            painter.text(
+                grain.pos,
+                Align2::CENTER_CENTER,
+                glyph.chr,
+                FontId::new(size, font.family.clone()),
+                grain.color.gamma_multiply(alpha * grain.opacity),
+            );
         }
     }
 }
@@ -1059,26 +1280,6 @@ fn is_modifier(key: egui::Key) -> bool {
     )
 }
 
-/// F11 or double-click toggles fullscreen, Esc leaves it. Double-click is
-/// ignored while the settings panel is open (fast checkbox clicks).
-fn handle_fullscreen(ctx: &egui::Context, allow_double_click: bool) {
-    let (toggle, escape, is_fullscreen) = ctx.input(|i| {
-        (
-            i.key_pressed(egui::Key::F11)
-                || (allow_double_click
-                    && i.pointer
-                        .button_double_clicked(egui::PointerButton::Primary)),
-            i.key_pressed(egui::Key::Escape),
-            i.viewport().fullscreen.unwrap_or(false),
-        )
-    });
-    if toggle {
-        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!is_fullscreen));
-    } else if escape && is_fullscreen {
-        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
-    }
-}
-
 fn install_fonts(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::default();
     let fallback = fonts
@@ -1127,6 +1328,23 @@ fn install_style(ctx: &egui::Context) {
         .into();
         style.visuals = egui::Visuals::dark();
         style.visuals.selection.bg_fill = BRAND_BLUE;
+        // Glass controls for the settings panel: white at low alpha, so the
+        // panel's frosted look carries through instead of grey-blue boxes.
+        let glass = Color32::from_white_alpha;
+        let widgets = &mut style.visuals.widgets;
+        widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, glass(26));
+        for (state, fill, stroke) in [
+            (&mut widgets.inactive, 26, 34),
+            (&mut widgets.hovered, 44, 80),
+            (&mut widgets.active, 60, 110),
+            (&mut widgets.open, 44, 80),
+        ] {
+            state.bg_fill = glass(fill);
+            state.weak_bg_fill = glass(fill);
+            state.bg_stroke = egui::Stroke::new(1.0, glass(stroke));
+            state.corner_radius = egui::CornerRadius::same(8);
+        }
+        style.visuals.extreme_bg_color = glass(16);
         style.spacing.item_spacing = Vec2::new(10.0, 8.0);
     });
 }

@@ -2239,10 +2239,12 @@ dependencies = [
  "mv-enrich",
  "mv-sources",
  "mv-video",
+ "raw-window-handle",
  "reqwest",
  "serde",
  "serde_json",
  "tokio",
+ "windows-sys 0.61.2",
  "winresource",
 ]
 
