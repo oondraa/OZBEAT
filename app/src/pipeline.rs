@@ -19,6 +19,8 @@ const TICK: Duration = Duration::from_millis(100);
 /// A track must stay active this long before we look it up, so skipping
 /// through a playlist doesn't fire a burst of API requests.
 const LOOKUP_DEBOUNCE: Duration = Duration::from_millis(1500);
+/// After LRCLIB failed (busy, offline), ask again while the song still plays.
+const LYRICS_RETRY: Duration = Duration::from_secs(45);
 /// YouTube is only asked about tracks that have really been played for a while.
 const VIDEO_MIN_PLAYED: Duration = Duration::from_secs(20);
 /// After a capture fails to open (no mic, permission denied), wait before retrying.
@@ -96,6 +98,9 @@ pub async fn run(opts: Options, scene: SharedScene, settings: SharedSettings) {
                 art_plan.track(&key);
                 art_plan.found(&enrichment);
                 art_plan.build(&enricher, &art_tx);
+                lookups.lyrics_retry = enrichment
+                    .lyrics_failed
+                    .then(|| Instant::now() + LYRICS_RETRY);
                 lookups.done = Some((key, enrichment));
             }
             Some((seq, loaded)) = art_rx.recv() => {
@@ -332,6 +337,8 @@ struct Lookups {
     candidate: Option<(String, Instant)>,
     requested: Option<String>,
     done: Option<(String, Arc<Enrichment>)>,
+    /// When to ask LRCLIB again for the requested track, after it failed.
+    lyrics_retry: Option<Instant>,
 }
 
 impl Lookups {
@@ -344,6 +351,11 @@ impl Lookups {
         let key = track_key(&np.track);
         if self.candidate.as_ref().is_none_or(|(k, _)| *k != key) {
             self.candidate = Some((key, Instant::now()));
+            self.lyrics_retry = None;
+            return;
+        }
+        if self.requested.as_ref() == Some(&key) {
+            self.retry_lyrics(np, enricher, tx);
             return;
         }
         let Some((key, since)) = &self.candidate else {
@@ -361,6 +373,31 @@ impl Lookups {
                 let _ = tx.send((key.clone(), Arc::new(so_far)));
             };
             let enrichment = enricher.enrich(&track, duration, progress).await;
+            let _ = tx.send((key, Arc::new(enrichment)));
+        });
+    }
+
+    /// Asks LRCLIB again for the finished lookup's lyrics, keeping the rest.
+    fn retry_lyrics(
+        &mut self,
+        np: &NowPlaying,
+        enricher: &Arc<Enricher>,
+        tx: &mpsc::UnboundedSender<(String, Arc<Enrichment>)>,
+    ) {
+        let (Some(at), Some((key, done))) = (self.lyrics_retry, &self.done) else {
+            return;
+        };
+        if Instant::now() < at || self.requested.as_ref() != Some(key) {
+            return;
+        }
+        self.lyrics_retry = None;
+        let (key, mut enrichment) = (key.clone(), Enrichment::clone(done));
+        let (track, duration) = (np.track.clone(), np.duration);
+        let (enricher, tx) = (Arc::clone(enricher), tx.clone());
+        tokio::spawn(async move {
+            let lyrics = enricher.lyrics(&track, duration).await;
+            enrichment.lyrics_failed = lyrics.is_err();
+            enrichment.lyrics = lyrics.ok().flatten();
             let _ = tx.send((key, Arc::new(enrichment)));
         });
     }

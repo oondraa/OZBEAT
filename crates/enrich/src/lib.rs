@@ -47,6 +47,8 @@ pub struct Enrichment {
     pub images: Vec<Image>,
     pub lyrics: Option<Lyrics>,
     pub bpm: Option<f32>,
+    /// LRCLIB failed (busy, offline) rather than having nothing: worth retrying.
+    pub lyrics_failed: bool,
     /// Lookups that failed (offline, backing off, ...). Missing data is not listed.
     pub problems: Vec<String>,
 }
@@ -155,6 +157,7 @@ impl Enricher {
         );
         let deezer = ok_or_note(deezer, "deezer", &mut out.problems);
         let itunes = ok_or_note(itunes, "itunes", &mut out.problems);
+        out.lyrics_failed = lyrics.is_err();
         out.lyrics = ok_or_note(lyrics, "lrclib", &mut out.problems);
         let (audiodb, fanart) = artist_art;
         let audiodb = ok_or_note(audiodb, "theaudiodb", &mut out.problems);
@@ -192,6 +195,19 @@ impl Enricher {
         }
         out.bpm = bpm;
         out
+    }
+
+    /// Only the lyrics, to retry them after LRCLIB failed.
+    pub async fn lyrics(
+        &self,
+        track: &Track,
+        duration: Option<Duration>,
+    ) -> Result<Option<Lyrics>, FetchError> {
+        let artist = track.artist.as_deref().map(matching::primary_artist);
+        match artist.filter(|a| !a.is_empty()) {
+            Some(artist) => lrclib::lookup(&self.http, artist, &track.title, duration).await,
+            None => Ok(None),
+        }
     }
 
     /// Local path of a downloaded image (cached forever, fetched politely).

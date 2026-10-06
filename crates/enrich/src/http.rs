@@ -25,6 +25,8 @@ const USER_AGENT: &str = concat!(
 const MISSING_TTL: Duration = Duration::from_secs(3 * 86_400);
 const BASE_BACKOFF: Duration = Duration::from_secs(30);
 const MAX_BACKOFF: Duration = Duration::from_secs(3600);
+/// Pauses before asking a busy (503) server again, before backing off.
+const BUSY_RETRIES: [Duration; 2] = [Duration::from_secs(1), Duration::from_secs(3)];
 
 #[derive(Clone, Copy)]
 pub(crate) struct Policy {
@@ -172,14 +174,27 @@ impl Http {
 
     async fn fetch(&self, url: &Url, policy: &Policy) -> Result<Option<Vec<u8>>, FetchError> {
         let host = url.host_str().unwrap_or_default().to_owned();
-        self.wait_turn(&host, policy.min_interval).await?;
-
-        let response = self
-            .client
-            .get(url.clone())
-            .send()
-            .await
-            .map_err(|e| FetchError::Network(e.to_string()))?;
+        let mut busy_retries = BUSY_RETRIES.iter();
+        let response = loop {
+            self.wait_turn(&host, policy.min_interval).await?;
+            let response = self
+                .client
+                .get(url.clone())
+                .send()
+                .await
+                .map_err(|e| FetchError::Network(e.to_string()))?;
+            // A busy server (LRCLIB often is) usually answers a moment later;
+            // backing off right away would cost every track for a while.
+            match busy_retries.next() {
+                Some(pause)
+                    if response.status() == StatusCode::SERVICE_UNAVAILABLE
+                        && !response.headers().contains_key(RETRY_AFTER) =>
+                {
+                    tokio::time::sleep(*pause).await;
+                }
+                _ => break response,
+            }
+        };
         let status = response.status();
 
         if status == StatusCode::NOT_FOUND {
