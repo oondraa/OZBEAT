@@ -17,8 +17,7 @@
 
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/icon-dark.png">
-<meta name="theme-color" content="#f4f4f5" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0b0b0d" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#0c0a0b">
 
 <link rel="preload" href="fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
@@ -32,8 +31,9 @@
 </script>
 
 <style>
-  /* Same visual language as oondraa.pages.dev: monochrome + one electric-blue accent, Geist, native CSS.
-     Kept deliberately short: one screen of intro, four features, one note, footer. */
+  /* Same look as the app itself: always dark, the blurred cover flowing behind everything in the
+     song's colors, white bold type, frosted glass panels and white glass pills with dark text.
+     The blue is the dot in the OZBEAT logo; amber is what the app uses for warnings. */
 
   @font-face {
     font-family: "Geist";
@@ -48,82 +48,104 @@
     unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
   }
 
+  /* The cover color the background flows in. Registered so it can crossfade between songs. */
+  @property --aura { syntax: "<color>"; inherits: true; initial-value: #c2552a; }
+
   :root {
-    --bg: #f4f4f5;
-    --surface: #ffffff;
-    --surface-2: #e9e9ec;
-    --text: #111114;
-    --muted: #595963;
-    --line: rgba(17, 17, 20, 0.1);
-    --accent: #1760f0;
-    --accent-fill: #1760f0;
-    --accent-fill-hover: #0f4fd0;
-    --glow: rgba(23, 96, 240, 0.16);
+    --aura: #c2552a;
+    --bg: #0c0a0b;
+    --text: #ffffff;
+    --muted: rgba(255, 255, 255, 0.64);
+    --faint: rgba(255, 255, 255, 0.4);
+    --line: rgba(255, 255, 255, 0.14);
+    --glass: rgba(255, 255, 255, 0.08);
+    --glass-hover: rgba(255, 255, 255, 0.14);
+    --brand: #2d8cff;
+    --amber: #e8b04a;
+    --ink: #121216;
+    --radius: 28px;
     --ease: cubic-bezier(0.16, 1, 0.3, 1);
-    color-scheme: light;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0b0b0d;
-      --surface: #141417;
-      --surface-2: #1c1c20;
-      --text: #ececef;
-      --muted: #a0a0ab;
-      --line: rgba(255, 255, 255, 0.09);
-      --accent: #5b93ff;
-      --accent-fill: #1f66f2;
-      --accent-fill-hover: #3a7aff;
-      --glow: rgba(31, 102, 242, 0.4);
-      color-scheme: dark;
-    }
+    color-scheme: dark;
+    transition: --aura 1.6s var(--ease);
   }
 
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body {
     background: var(--bg); color: var(--text);
-    font-family: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-family: "Segoe UI Variable Text", "Segoe UI", "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
     font-size: 16px; line-height: 1.6;
     -webkit-font-smoothing: antialiased;
   }
-  a { color: var(--accent); text-decoration: none; }
+  h1, h2, .btn, .wordmark { font-family: "Segoe UI Variable Display", "Segoe UI", "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  a { color: var(--brand); text-decoration: none; }
   button { font: inherit; }
-  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+  :focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; border-radius: 6px; }
   .wrap { width: 100%; max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+  main, footer { position: relative; z-index: 1; }
+
+  /* The flowing background: big soft blobs of the cover color drifting slowly, darker at the edges. */
+  .aura { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; background: var(--bg); }
+  .aura i { position: absolute; width: 70vmax; height: 70vmax; border-radius: 50%; }
+  .aura i:nth-child(1) { left: -20vmax; top: -25vmax; opacity: 0.6; background: radial-gradient(closest-side, color-mix(in srgb, var(--aura) 75%, transparent), transparent); }
+  .aura i:nth-child(2) { right: -25vmax; top: 10vmax; opacity: 0.5; background: radial-gradient(closest-side, color-mix(in srgb, var(--aura) 60%, transparent), transparent); }
+  .aura i:nth-child(3) { left: 15vmax; bottom: -35vmax; opacity: 0.4; background: radial-gradient(closest-side, color-mix(in srgb, var(--aura), #fff 10%), transparent); }
+  .aura::after {
+    content: ""; position: absolute; inset: 0;
+    background: radial-gradient(120% 90% at 50% 40%, transparent 30%, rgba(0, 0, 0, 0.55)), linear-gradient(rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.45));
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    @keyframes drift1 { 50% { transform: translate(12vmax, 8vmax) scale(1.1); } }
+    @keyframes drift2 { 50% { transform: translate(-10vmax, 6vmax) scale(0.9); } }
+    @keyframes drift3 { 50% { transform: translate(8vmax, -10vmax) scale(1.15); } }
+    .aura i:nth-child(1) { animation: drift1 38s ease-in-out infinite; }
+    .aura i:nth-child(2) { animation: drift2 46s ease-in-out infinite; }
+    .aura i:nth-child(3) { animation: drift3 54s ease-in-out infinite; }
+  }
+
+  /* Frosted glass, like the settings panel: see-through fill, a sheen from the top, a bright top rim. */
+  .glass {
+    position: relative; border-radius: var(--radius);
+    background: linear-gradient(rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0) 260px), var(--glass);
+    border: 1px solid var(--line);
+    box-shadow: 0 18px 64px -12px rgba(0, 0, 0, 0.45);
+    -webkit-backdrop-filter: blur(24px) saturate(140%); backdrop-filter: blur(24px) saturate(140%);
+  }
+  .glass::before {
+    content: ""; position: absolute; left: var(--radius); right: var(--radius); top: -1px; height: 1px; pointer-events: none;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+  }
 
   /* Intro */
   .hero { position: relative; overflow-x: clip; padding: 72px 0 88px; min-height: min(860px, 100dvh); display: grid; align-items: center; }
-  .hero::before {
-    content: ""; position: absolute; left: 50%; top: -320px; width: min(980px, 140vw); height: 600px;
-    transform: translateX(-50%); pointer-events: none;
-    background: radial-gradient(closest-side, var(--glow), transparent);
-  }
   .hero .wrap { position: relative; max-width: 1240px; display: grid; grid-template-columns: minmax(0, 9fr) minmax(0, 11fr); gap: 40px; align-items: center; }
-  .app-icon { width: 72px; height: 72px; border-radius: 16px; display: block; margin-bottom: 32px; }
-  .hero h1 { margin: 0; font-size: clamp(44px, 5.4vw, 76px); line-height: 0.98; font-weight: 650; letter-spacing: -0.05em; }
+  .wordmark { display: flex; align-items: center; gap: 14px; margin-bottom: 36px; font-size: 24px; font-weight: 600; letter-spacing: 0.01em; }
+  .wordmark svg { width: 46px; height: auto; display: block; overflow: visible; }
+  .hero h1 { margin: 0; font-size: clamp(44px, 5.4vw, 76px); line-height: 1.04; font-weight: 700; letter-spacing: -0.025em; }
   .hero h1 span { display: block; }
-  .hero h1 em { display: block; font-style: normal; color: var(--muted); }
+  /* The second line sits back like the lyric lines around the current one. */
+  .hero h1 em { display: block; font-style: normal; color: var(--faint); }
   .hero p { margin: 24px 0 0; max-width: 40ch; font-size: 19px; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
   .ctas { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 32px; }
   .btn {
     display: inline-flex; align-items: center; gap: 8px; height: 46px; padding: 0 22px; border-radius: 999px;
     font-size: 16px; font-weight: 600; white-space: nowrap; border: 1px solid transparent;
-    transition: transform 0.15s var(--ease), background 0.2s var(--ease);
+    transition: transform 0.15s var(--ease), background 0.2s var(--ease), box-shadow 0.2s var(--ease), border-color 0.2s var(--ease);
   }
   .btn:active { transform: scale(0.98) translateY(1px); }
   .btn .ph { font-size: 18px; }
-  .btn-primary { background: var(--accent-fill); color: #fff; }
-  .btn-primary:hover { background: var(--accent-fill-hover); }
-  .btn-ghost { background: var(--surface); color: var(--text); border-color: var(--line); }
-  .btn-ghost:hover { background: var(--surface-2); }
-  .meta { margin-top: 16px; font-size: 14px; color: var(--muted); }
+  /* The app's main action: a white glass pill with dark text. */
+  .btn-primary { background: rgba(255, 255, 255, 0.92); color: var(--ink); box-shadow: 0 8px 30px -8px rgba(0, 0, 0, 0.5); }
+  .btn-primary:hover { background: #fff; box-shadow: 0 8px 40px -6px color-mix(in srgb, var(--aura) 70%, transparent); }
+  .btn-ghost {
+    background: var(--glass); color: var(--text); border-color: var(--line);
+    -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  }
+  .btn-ghost:hover { background: var(--glass-hover); border-color: rgba(255, 255, 255, 0.3); }
+  .meta { margin-top: 16px; font-size: 14px; color: var(--faint); }
 
   /* Card deck: three real screenshots fanned out. The front card changes slowly on its own or on click. */
   .deck { position: relative; aspect-ratio: 16 / 11; }
-  .deck-glow {
-    position: absolute; inset: 12% 8%; border-radius: 50%; filter: blur(70px); opacity: 0.55;
-    background: var(--deck-color, #c2552a); transition: background-color 1.2s var(--ease);
-  }
   .card {
     position: absolute; left: 50%; top: 50%; width: 84%; margin: 0; padding: 0; border: 0; background: none; cursor: pointer;
     transform: translate(-50%, -50%) var(--pos); transform-origin: 50% 100%;
@@ -131,97 +153,100 @@
     filter: brightness(var(--dim, 1));
   }
   .card img {
-    display: block; width: 100%; height: auto; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.1); background: #111;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2), 0 30px 70px -20px rgba(0, 0, 0, 0.6);
+    display: block; width: 100%; height: auto; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.12); background: #111;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3), 0 30px 70px -20px rgba(0, 0, 0, 0.75);
   }
   .card[data-pos="0"] { --pos: translate(0, 8%) rotate(0deg); z-index: 3; cursor: default; }
-  .card[data-pos="1"] { --pos: translate(-17%, -14%) rotate(-8deg) scale(0.86); --dim: 0.75; z-index: 2; }
-  .card[data-pos="2"] { --pos: translate(17%, -20%) rotate(7deg) scale(0.78); --dim: 0.6; z-index: 1; }
+  .card[data-pos="1"] { --pos: translate(-17%, -14%) rotate(-8deg) scale(0.86); --dim: 0.7; z-index: 2; }
+  .card[data-pos="2"] { --pos: translate(17%, -20%) rotate(7deg) scale(0.78); --dim: 0.55; z-index: 1; }
   .deck:hover .card[data-pos="1"] { --pos: translate(-20%, -16%) rotate(-10deg) scale(0.86); }
   .deck:hover .card[data-pos="2"] { --pos: translate(20%, -22%) rotate(9deg) scale(0.78); }
   /* On load the cards start stacked and fan out one after another. */
   .deck.is-stacked .card { --pos: translate(0, 18%) rotate(0deg) scale(0.86); filter: brightness(0.4); }
-  .card:nth-child(3) { transition-delay: 0.08s; }
-  .card:nth-child(4) { transition-delay: 0.16s; }
+  .card:nth-child(2) { transition-delay: 0.08s; }
+  .card:nth-child(3) { transition-delay: 0.16s; }
   .deck.is-ready .card { transition-delay: 0s; }
 
   /* Videos: one big player, four picks underneath. Plays muted while on screen, then moves to the next clip. */
-  .watch { padding: 80px 0 0; }
-  .watch h2, .duo h2 { margin: 0; font-size: clamp(28px, 3.4vw, 40px); line-height: 1.1; font-weight: 650; letter-spacing: -0.03em; }
+  .watch { padding: 96px 0 0; }
+  .watch h2, .duo h2 { margin: 0; font-size: clamp(28px, 3.4vw, 40px); line-height: 1.1; font-weight: 700; letter-spacing: -0.02em; }
   .watch > p { margin: 12px 0 28px; max-width: 52ch; color: var(--muted); font-size: 17px; line-height: 1.55; }
   .player {
-    position: relative; aspect-ratio: 16 / 9; border-radius: 16px; overflow: hidden; background: #000;
-    border: 1px solid var(--line); box-shadow: 0 1px 2px rgba(20, 24, 40, 0.06), 0 24px 60px -24px rgba(20, 24, 40, 0.35);
+    position: relative; aspect-ratio: 16 / 9; border-radius: 18px; overflow: hidden; background: #000;
+    border: 1px solid var(--line); box-shadow: 0 30px 80px -24px rgba(0, 0, 0, 0.7);
   }
   .player video { width: 100%; height: 100%; display: block; object-fit: cover; cursor: pointer; }
+  /* The thin progress line along the bottom edge, as in the app. */
+  .player .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(255, 255, 255, 0.1); pointer-events: none; }
+  .player .bar i { display: block; height: 100%; background: var(--aura); transform-origin: 0 50%; transform: scaleX(var(--p, 0)); transition: transform 0.3s linear; }
   .player .state {
-    position: absolute; right: 14px; bottom: 14px; width: 40px; height: 40px; border: 0; border-radius: 999px; cursor: pointer;
+    position: absolute; right: 14px; bottom: 16px; width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 999px; cursor: pointer;
     display: grid; place-items: center; font-size: 18px; color: #fff;
-    background: rgba(0, 0, 0, 0.45); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    background: rgba(255, 255, 255, 0.12); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
   }
-  .picks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+  .picks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
   .pick {
     display: flex; flex-direction: column; gap: 8px; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; color: var(--text);
   }
   .pick img {
     width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 10px; display: block;
-    outline: 2px solid transparent; outline-offset: 2px; opacity: 0.6; transition: opacity 0.3s var(--ease), outline-color 0.3s var(--ease);
+    outline: 2px solid transparent; outline-offset: 2px; opacity: 0.5; transition: opacity 0.3s var(--ease), outline-color 0.3s var(--ease);
   }
-  .pick:hover img { opacity: 0.9; }
-  .pick[aria-pressed="true"] img { opacity: 1; outline-color: var(--accent); }
-  .pick span { display: flex; flex-direction: column; font-size: 14px; line-height: 1.35; }
-  .pick b { font-weight: 600; }
+  .pick:hover img { opacity: 0.85; }
+  .pick[aria-pressed="true"] img { opacity: 1; outline-color: rgba(255, 255, 255, 0.85); }
+  .pick span { display: flex; flex-direction: column; font-size: 14px; line-height: 1.35; transition: opacity 0.3s var(--ease); }
+  .pick[aria-pressed="false"] span { opacity: 0.6; }
+  .pick b { font-weight: 700; }
   .pick small { color: var(--muted); font-size: 13px; }
 
   /* Screenshots */
-  .shot { display: block; width: 100%; height: auto; border-radius: 16px; border: 1px solid var(--line); background: #111; box-shadow: 0 1px 2px rgba(20, 24, 40, 0.06), 0 24px 60px -24px rgba(20, 24, 40, 0.35); }
-  .duo { padding: 80px 0 0; }
+  .shot { display: block; width: 100%; height: auto; border-radius: 16px; border: 1px solid var(--line); background: #111; box-shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.7); }
+  .duo { padding: 96px 0 0; }
   .duo > p { margin: 12px 0 28px; max-width: 52ch; color: var(--muted); font-size: 17px; line-height: 1.55; }
   .screens { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
   .screens figure { margin: 0; }
-  .screens figcaption { margin-top: 10px; font-size: 14px; color: var(--muted); }
+  .screens figcaption { margin-top: 10px; font-size: 14px; color: var(--faint); }
   .screens img { transition: opacity 0.4s ease-out; }
   .screens.is-swapping img { opacity: 0; }
-  .seg { display: inline-flex; gap: 4px; padding: 4px; margin: 0 0 20px; border-radius: 999px; background: var(--surface-2); }
+  .seg { display: inline-flex; gap: 4px; padding: 4px; margin: 0 0 20px; border-radius: 999px; background: var(--glass); border: 1px solid var(--line); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
   .seg button {
     height: 36px; padding: 0 16px; border: 0; border-radius: 999px; background: none; color: var(--muted);
     font-size: 14.5px; font-weight: 600; cursor: pointer; transition: background 0.2s var(--ease), color 0.2s var(--ease);
   }
-  .seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
+  .seg button:hover { color: var(--text); }
+  .seg button[aria-pressed="true"] { background: rgba(255, 255, 255, 0.92); color: var(--ink); }
 
   /* Features */
   .features { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-  .feature { background: var(--surface-2); border-radius: 16px; padding: 24px; display: flex; gap: 16px; }
-  .feature .ph { font-size: 26px; color: var(--accent); flex-shrink: 0; margin-top: 2px; }
-  .feature h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; letter-spacing: -0.015em; }
+  .feature { border-radius: 22px; padding: 24px; display: flex; gap: 16px; }
+  .feature .ph { font-size: 26px; color: var(--text); flex-shrink: 0; margin-top: 2px; opacity: 0.9; }
+  .feature h2 { margin: 0 0 4px; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
   .feature p { margin: 0; color: var(--muted); font-size: 15.5px; line-height: 1.55; text-wrap: pretty; }
 
   /* Screensaver */
-  .saver {
-    margin-top: 80px; padding: 32px; border-radius: 16px; display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 32px; align-items: center;
-    background: radial-gradient(120% 100% at 100% 0%, color-mix(in srgb, var(--accent-fill) 22%, var(--surface)), var(--surface) 62%);
-    border: 1px solid var(--line);
-  }
-  .saver h2 { margin: 0; font-size: clamp(26px, 3vw, 36px); line-height: 1.1; font-weight: 650; letter-spacing: -0.03em; }
+  .saver { margin-top: 96px; padding: 36px; display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 32px; align-items: center; }
+  .saver h2 { margin: 0; font-size: clamp(26px, 3vw, 36px); line-height: 1.1; font-weight: 700; letter-spacing: -0.02em; }
   .saver > div > p { margin: 12px 0 20px; color: var(--muted); font-size: 16.5px; line-height: 1.55; max-width: 40ch; }
   .saver ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; counter-reset: step; }
   .saver li { display: flex; gap: 14px; align-items: baseline; font-size: 16px; line-height: 1.5; counter-increment: step; }
   .saver li::before {
     content: counter(step); flex-shrink: 0; width: 28px; height: 28px; border-radius: 999px; display: grid; place-items: center;
-    background: var(--accent-fill); color: #fff; font-size: 14px; font-weight: 600; transform: translateY(-1px);
+    background: var(--brand); color: #fff; font-size: 14px; font-weight: 700; transform: translateY(-1px);
+    box-shadow: 0 0 18px -2px color-mix(in srgb, var(--brand) 70%, transparent);
   }
   .saver li span { color: var(--muted); }
 
-  /* SmartScreen note */
+  /* SmartScreen note, in the app's warning amber. */
   .note {
-    margin: 16px 0 96px; padding: 18px 22px; border-radius: 16px; display: flex; gap: 14px; align-items: flex-start;
-    border: 1px solid color-mix(in srgb, var(--accent-fill) 28%, transparent);
-    background: color-mix(in srgb, var(--accent-fill) 10%, var(--surface));
-    font-size: 15.5px; line-height: 1.55;
+    margin: 16px 0 96px; padding: 18px 22px; border-radius: 20px; display: flex; gap: 14px; align-items: flex-start;
+    border: 1px solid color-mix(in srgb, var(--amber) 35%, transparent);
+    background: color-mix(in srgb, var(--amber) 9%, rgba(0, 0, 0, 0.25));
+    -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+    font-size: 15.5px; line-height: 1.55; color: rgba(255, 255, 255, 0.85);
   }
-  .note .ph { font-size: 22px; color: var(--accent); flex-shrink: 0; margin-top: 1px; }
+  .note .ph { font-size: 22px; color: var(--amber); flex-shrink: 0; margin-top: 1px; }
 
-  footer { padding: 28px 0 40px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+  footer { padding: 28px 0 40px; border-top: 1px solid var(--line); color: var(--faint); font-size: 14px; }
   footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; }
   footer nav { display: flex; flex-wrap: wrap; gap: 6px 20px; }
   footer a, footer button { color: var(--muted); }
@@ -239,28 +264,29 @@
     .deck { max-width: 640px; width: 100%; margin: 0 auto; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .card, .deck-glow { transition: none; }
+    :root { transition: none; }
+    .card { transition: none; }
   }
   @media (max-width: 767px) {
     .wrap { padding: 0 16px; }
     .hero { padding: 48px 0 40px; }
     .hero p { font-size: 17px; }
-    .app-icon { width: 60px; height: 60px; margin-bottom: 24px; }
+    .wordmark { margin-bottom: 28px; }
     .features, .screens, .saver { grid-template-columns: minmax(0, 1fr); }
-    .saver { padding: 24px; gap: 24px; margin-top: 56px; }
+    .saver { padding: 24px; gap: 24px; margin-top: 64px; }
     .picks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .watch { padding-top: 56px; }
-    .duo { padding-top: 56px; }
+    .watch, .duo { padding-top: 64px; }
     .note { margin-bottom: 64px; }
   }
 </style>
 </head>
 <body>
+  <div class="aura" aria-hidden="true"><i></i><i></i><i></i></div>
   <main>
     <section class="hero">
       <div class="wrap">
         <div>
-        <img class="app-icon rise" src="assets/icon-dark.png" alt="OZBEAT" width="72" height="72">
+        <div class="wordmark rise"><svg viewBox="8 18 46 32" aria-hidden="true"><path d="M11 36h9l5-14 8 24 5-10h7" fill="none" stroke="#fff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="49" cy="35" r="5" fill="#2D8CFF"/></svg>OZBEAT</div>
         <h1 class="rise" style="--i:1"><span data-i18n="heroA">Your music,</span><em data-i18n="heroB">on the big screen.</em></h1>
         <p class="rise" style="--i:2" data-i18n="heroSub">OZBEAT shows what your PC or BluOS speakers are playing, with artwork, synced lyrics and visuals that move with the music.</p>
         <div class="ctas rise" style="--i:3">
@@ -270,7 +296,6 @@
         <div class="meta rise" style="--i:3" data-i18n="meta">Windows 10 and 11, 64-bit. Nothing to install. Free for personal use.</div>
         </div>
         <div class="deck is-stacked" id="deck" aria-label="Screenshots">
-          <div class="deck-glow" aria-hidden="true"></div>
           <button class="card" type="button" data-pos="0" data-color="#c2552a"><img src="assets/shots/viktorsheen.webp" width="1600" height="900" alt="OZBEAT playing Sérum by Viktor Sheen: cover, title and synced lyrics over the blurred artwork"></button>
           <button class="card" type="button" data-pos="1" data-color="#a07a3a"><img src="assets/shots/yzo.webp" width="1600" height="900" alt="OZBEAT playing Na Rohu by Yzomandias"></button>
           <button class="card" type="button" data-pos="2" data-color="#8c7aa8"><img src="assets/shots/calin.webp" width="1600" height="899" alt="OZBEAT playing Pražský holky by Calin"></button>
@@ -280,23 +305,24 @@
 
     <div class="wrap">
       <div class="features">
-        <div class="feature"><i class="ph ph-monitor-play" aria-hidden="true"></i><div><h2 data-i18n="f1T">Anything on your PC</h2><p data-i18n="f1">Spotify, your browser or any app in the Windows media controls.</p></div></div>
-        <div class="feature"><i class="ph ph-speaker-hifi" aria-hidden="true"></i><div><h2 data-i18n="f2T">BluOS speakers</h2><p data-i18n="f2">Bluesound players on your network are found automatically.</p></div></div>
-        <div class="feature"><i class="ph ph-microphone-stage" aria-hidden="true"></i><div><h2 data-i18n="f3T">Lyrics where others have none</h2><p data-i18n="f3">Line by line, in time with the song. Even for many songs Spotify has no lyrics for.</p></div></div>
-        <div class="feature"><i class="ph ph-image" aria-hidden="true"></i><div><h2 data-i18n="f4T">Artwork background</h2><p data-i18n="f4">The blurred cover flows behind everything, in the song's own colors.</p></div></div>
+        <div class="feature glass"><i class="ph ph-monitor-play" aria-hidden="true"></i><div><h2 data-i18n="f1T">Anything on your PC</h2><p data-i18n="f1">Spotify, your browser or any app in the Windows media controls.</p></div></div>
+        <div class="feature glass"><i class="ph ph-speaker-hifi" aria-hidden="true"></i><div><h2 data-i18n="f2T">BluOS speakers</h2><p data-i18n="f2">Bluesound players on your network are found automatically.</p></div></div>
+        <div class="feature glass"><i class="ph ph-microphone-stage" aria-hidden="true"></i><div><h2 data-i18n="f3T">Lyrics where others have none</h2><p data-i18n="f3">Line by line, in time with the song. Even for many songs Spotify has no lyrics for.</p></div></div>
+        <div class="feature glass"><i class="ph ph-image" aria-hidden="true"></i><div><h2 data-i18n="f4T">Artwork background</h2><p data-i18n="f4">The blurred cover flows behind everything, in the song's own colors.</p></div></div>
       </div>
       <section class="watch">
         <h2 data-i18n="watchT">See it play</h2>
         <p data-i18n="watch">Real recordings from OZBEAT. The background flows in the cover's colors and the lyrics follow the song.</p>
         <div class="player">
           <video id="player" muted playsinline preload="none" poster="assets/video/sheen.jpg" src="assets/video/sheen.mp4" aria-label="OZBEAT recording"></video>
+          <div class="bar" aria-hidden="true"><i id="player-bar"></i></div>
           <button class="state" id="player-state" type="button" aria-label="Play"><i class="ph ph-play" aria-hidden="true"></i></button>
         </div>
         <div class="picks">
-          <button class="pick" type="button" data-clip="sheen" aria-pressed="true"><img src="assets/video/sheen.jpg" alt="" loading="lazy" width="1280" height="720"><span><b>Viktor Sheen</b><small>V pekle</small></span></button>
-          <button class="pick" type="button" data-clip="yzo" aria-pressed="false"><img src="assets/video/yzo.jpg" alt="" loading="lazy" width="1280" height="720"><span><b>Yzomandias</b><small>COUPÉ</small></span></button>
-          <button class="pick" type="button" data-clip="ptk" aria-pressed="false"><img src="assets/video/ptk.jpg" alt="" loading="lazy" width="1280" height="720"><span><b>PTK</b><small>Víš jak bolí říkat RIP</small></span></button>
-          <button class="pick" type="button" data-clip="ye" aria-pressed="false"><img src="assets/video/ye.jpg" alt="" loading="lazy" width="1280" height="720"><span><b>Kanye West</b><small>Black Skinhead</small></span></button>
+          <button class="pick" type="button" data-clip="sheen" data-color="#b0502e" aria-pressed="true"><img src="assets/video/sheen.jpg" alt="" loading="lazy" width="1280" height="720"><span><b>Viktor Sheen</b><small>V pekle</small></span></button>
+          <button class="pick" type="button" data-clip="yzo" data-color="#a07a3a" aria-pressed="false"><img src="assets/video/yzo.jpg" alt="" loading="lazy" width="1280" height="720"><span><b>Yzomandias</b><small>COUPÉ</small></span></button>
+          <button class="pick" type="button" data-clip="ptk" data-color="#52849e" aria-pressed="false"><img src="assets/video/ptk.jpg" alt="" loading="lazy" width="1280" height="720"><span><b>PTK</b><small>Víš jak bolí říkat RIP</small></span></button>
+          <button class="pick" type="button" data-clip="ye" data-color="#c0453c" aria-pressed="false"><img src="assets/video/ye.jpg" alt="" loading="lazy" width="1280" height="720"><span><b>Kanye West</b><small>Black Skinhead</small></span></button>
         </div>
       </section>
       <section class="duo">
@@ -311,7 +337,7 @@
           <figure><img class="shot" src="assets/shots/yzo2.webp" width="1600" height="899" loading="lazy" alt="Second screen: large synced lyrics"><figcaption data-i18n="scr2">Second screen</figcaption></figure>
         </div>
       </section>
-      <section class="saver" id="screensaver">
+      <section class="saver glass" id="screensaver">
         <div>
           <h2 data-i18n="scrT">Also a screensaver</h2>
           <p data-i18n="scr">The same picture when your PC is idle, on all your monitors. Move the mouse or press a key to close it.</p>
@@ -334,7 +360,7 @@
         <a href="https://github.com/oondraa/OZBEAT">GitHub</a>
         <a href="https://github.com/oondraa/OZBEAT/releases" data-i18n="releases">Releases</a>
         <a href="https://github.com/oondraa/OZBEAT/blob/main/LICENSE" data-i18n="license">License</a>
-        <a href="https://oondraa.pages.dev/">OZLAB</a>
+        <a href="https://oondraa.pages.dev/">OZDIGITAL</a>
         <button id="lang-toggle" type="button">Česky</button>
       </nav>
     </div>
@@ -376,10 +402,15 @@
 
   var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+  // The background flows in the colors of whatever is on screen: the front card up top, the clip further down.
+  var root = document.documentElement, deckColor = null, clipColor = null, clipOnScreen = false;
+  function paint() { root.style.setProperty("--aura", (clipOnScreen && clipColor) || deckColor); }
+
   // Deck: fan out after load, then bring the next card to the front every few seconds.
   var deck = document.getElementById("deck"), cards = deck.querySelectorAll(".card");
   function sync() {
-    cards.forEach(function (c) { if (c.dataset.pos === "0") deck.style.setProperty("--deck-color", c.dataset.color); });
+    cards.forEach(function (c) { if (c.dataset.pos === "0") deckColor = c.dataset.color; });
+    paint();
   }
   function bringToFront(card) {
     var p = +card.dataset.pos;
@@ -406,6 +437,7 @@
 
   // Videos: play while on screen, advance to the next clip when one ends.
   var video = document.getElementById("player"), stateBtn = document.getElementById("player-state");
+  var bar = document.getElementById("player-bar");
   var picks = Array.prototype.slice.call(document.querySelectorAll(".pick"));
   var onScreen = false, userPaused = reduce;
   function syncState() {
@@ -414,7 +446,12 @@
   }
   function tryPlay() { if (onScreen && !userPaused) { var pr = video.play(); if (pr) pr.catch(function () {}); } }
   function load(clip) {
-    picks.forEach(function (b) { b.setAttribute("aria-pressed", b.dataset.clip === clip ? "true" : "false"); });
+    picks.forEach(function (b) {
+      b.setAttribute("aria-pressed", b.dataset.clip === clip ? "true" : "false");
+      if (b.dataset.clip === clip) clipColor = b.dataset.color;
+    });
+    paint();
+    bar.style.setProperty("--p", 0);
     video.poster = "assets/video/" + clip + ".jpg";
     video.src = "assets/video/" + clip + ".mp4";
     tryPlay();
@@ -427,6 +464,9 @@
   function toggle() {
     if (video.paused) { userPaused = false; onScreen = true; tryPlay(); } else { userPaused = true; video.pause(); }
   }
+  video.addEventListener("timeupdate", function () {
+    if (video.duration) bar.style.setProperty("--p", video.currentTime / video.duration);
+  });
   video.addEventListener("click", toggle);
   stateBtn.addEventListener("click", toggle);
   video.addEventListener("play", syncState);
@@ -435,6 +475,11 @@
     onScreen = es[0].isIntersecting;
     if (onScreen) tryPlay(); else video.pause();
   }, { threshold: 0.4 }).observe(video);
+  clipColor = picks[0].dataset.color;
+  new IntersectionObserver(function (es) {
+    clipOnScreen = es[0].isIntersecting;
+    paint();
+  }, { rootMargin: "-35% 0px -35% 0px" }).observe(video);
 
   // Two screens: switch between the example pairs with a short crossfade.
   var screens = document.getElementById("screens"), imgs = screens.querySelectorAll("img");
