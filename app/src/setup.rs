@@ -171,33 +171,52 @@ pub fn show(
 /// Light on the glass: a sheen fading down from the top, a thin rim that is
 /// brightest along the top edge, and `shine` brightening the rim further.
 fn draw_glass(painter: &egui::Painter, rect: Rect, opacity: f32, shine: f32) {
-    const BANDS: usize = 10;
-    let sheen = rect.height().min(260.0);
-    for k in 0..BANDS {
-        let height = sheen * (1.0 - k as f32 / BANDS as f32);
-        let band = Rect::from_min_size(rect.min, Vec2::new(rect.width(), height));
-        let corners = egui::CornerRadius {
-            nw: RADIUS as u8,
-            ne: RADIUS as u8,
-            sw: 0,
-            se: 0,
-        };
-        painter.rect_filled(band, corners, glow(Color32::WHITE, 0.011 * opacity));
-    }
+    use egui::{Direction, Shape};
+    // The sheen: even under the rounded top corners, then a smooth gradient
+    // (not stacked bands, which showed as steps). The even part is two radii
+    // tall because egui clamps a corner to half the rect's height; a shorter
+    // one gets tighter corners that poke out past the rim.
+    let sheen = glow(Color32::WHITE, 0.08 * opacity);
+    let corners = Rect::from_min_size(rect.min, Vec2::new(rect.width(), 2.0 * RADIUS));
+    let top_corners = egui::CornerRadius {
+        nw: RADIUS as u8,
+        ne: RADIUS as u8,
+        sw: 0,
+        se: 0,
+    };
+    painter.rect_filled(corners, top_corners, sheen);
+    let fade = Rect::from_min_max(
+        corners.left_bottom(),
+        Pos2::new(rect.right(), (rect.top() + 260.0).min(rect.bottom())),
+    );
+    painter.add(Shape::gradient_rect(
+        fade,
+        Direction::TopDown,
+        [sheen, Color32::TRANSPARENT],
+    ));
+
     painter.rect_stroke(
         rect,
         RADIUS,
         egui::Stroke::new(1.0, glow(Color32::WHITE, (0.16 + 0.5 * shine) * opacity)),
         egui::StrokeKind::Inside,
     );
-    let top = rect.top() + 1.0;
-    painter.line_segment(
-        [
-            Pos2::new(rect.left() + RADIUS, top),
-            Pos2::new(rect.right() - RADIUS, top),
-        ],
-        egui::Stroke::new(1.0, glow(Color32::WHITE, (0.35 + 0.5 * shine) * opacity)),
-    );
+    // The light catching the top edge, fading out toward the corners so it
+    // doesn't end abruptly where the rim starts to curve.
+    let edge = glow(Color32::WHITE, (0.3 + 0.5 * shine) * opacity);
+    let top = rect.top() + 0.5;
+    let mid = rect.center().x;
+    let half = (rect.width() / 2.0 - RADIUS).max(0.0);
+    for (from, to, colors) in [
+        (mid - half, mid, [Color32::TRANSPARENT, edge]),
+        (mid, mid + half, [edge, Color32::TRANSPARENT]),
+    ] {
+        painter.add(Shape::gradient_rect(
+            Rect::from_x_y_ranges(from..=to, top..=top + 1.0),
+            Direction::LeftToRight,
+            colors,
+        ));
+    }
 }
 
 /// A white glass pill with dark text, for the main actions.

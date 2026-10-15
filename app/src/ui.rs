@@ -1346,6 +1346,9 @@ fn install_style(ctx: &egui::Context) {
         }
         style.visuals.extreme_bg_color = glass(16);
         style.spacing.item_spacing = Vec2::new(10.0, 8.0);
+        // The scroll fade paints the panel's own fill as a box, which on
+        // see-through glass shows up as a lighter rectangle with hard edges.
+        style.spacing.scroll.fade.strength = 0.0;
     });
 }
 
