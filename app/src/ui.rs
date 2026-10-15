@@ -6,7 +6,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use eframe::egui::{
     self, Align2, Color32, FontData, FontDefinitions, FontFamily, FontId, Pos2, Rect,
-    TextureHandle, TextureOptions, Vec2, load::SizedTexture,
+    TextureHandle, TextureOptions, Vec2, emath::TSTransform, load::SizedTexture,
 };
 use eframe::egui_wgpu;
 use mv_audio::Capture;
@@ -14,7 +14,7 @@ use mv_core::{Device, NowPlaying, PlaybackState};
 use mv_enrich::Enrichment;
 
 use crate::Mode;
-use crate::anim::{Tween, ease_out_cubic};
+use crate::anim::{Tween, ease_in_out_cubic, ease_out_cubic};
 use crate::art::{Art, DEFAULT_PALETTE, Picture};
 use crate::background::{self, Background, Uniforms};
 use crate::beam;
@@ -38,6 +38,11 @@ const MIRROR_OPEN: Duration = Duration::from_millis(1000);
 const MIRROR_CLOSE: Duration = Duration::from_millis(800);
 /// Frames the second window draws before it is shown and the transition starts.
 const MIRROR_READY: u32 = 3;
+/// Clicking the lyrics: they grow to fill the window, and shrink back.
+const FOCUS_OPEN: Duration = Duration::from_millis(550);
+const FOCUS_CLOSE: Duration = Duration::from_millis(400);
+/// A second click this soon after a focus toggle is a double-click (fullscreen).
+const DOUBLE_CLICK: Duration = Duration::from_millis(400);
 
 pub(crate) const BOLD: &str = "bold";
 const REGULAR: &str = "regular";
@@ -137,6 +142,11 @@ pub struct VisualApp {
     started: Instant,
     art: ArtFade,
     lyric_scroll: LyricScroll,
+    /// Lyrics clicked: shown big in the middle, cover and titles hidden.
+    lyrics_focus: bool,
+    lyrics_focus_anim: Tween,
+    /// When a click last toggled `lyrics_focus`, to undo it on a double-click.
+    focus_toggled: Option<Instant>,
     /// Animation phase of the background; advances faster with louder mids,
     /// so the flow speeds up smoothly instead of jumping.
     flow: f32,
@@ -267,6 +277,9 @@ impl VisualApp {
                 changed: Instant::now(),
             },
             lyric_scroll: LyricScroll::new(),
+            lyrics_focus: false,
+            lyrics_focus_anim: Tween::new(FOCUS_OPEN, FOCUS_CLOSE),
+            focus_toggled: None,
             flow: 0.0,
             last_frame: Instant::now(),
             mode,
@@ -404,13 +417,18 @@ impl eframe::App for VisualApp {
         } else {
             (1.0, None)
         };
+        if self.mode != Mode::Screensaver {
+            self.handle_lyrics_click(&ctx, ui.max_rect(), &frame, split);
+        }
+        self.lyrics_focus_anim.set(self.lyrics_focus);
+        let focus = self.lyrics_focus_anim.progress();
         self.settings_anim.set(self.settings_open);
         let panel = self.settings_anim.progress();
         // Behind the glass panel only the soft background shows: the sharp
         // cover, titles and lyrics fade back, so the pane reads as frosted.
         ui.scope(|ui| {
             ui.multiply_opacity(1.0 - 0.95 * ease_out_cubic(panel));
-            self.draw_visual(ui, &frame, Content::Main { split, pull });
+            self.draw_visual(ui, &frame, Content::Main { split, pull, focus });
         });
         if self.mirror.is_some() {
             beam::draw_outgoing(
@@ -469,10 +487,12 @@ enum Content {
     /// Cover and titles. `split` (0 -> 1) is how far the lyrics have moved
     /// to a second screen: at 0 they sit below the cover, at 1 they are gone
     /// and the cover block is centered. While they go, `pull` pours them
-    /// into the Ctrl+D spark.
+    /// into the Ctrl+D spark. `focus` (0 -> 1) is how far clicked lyrics
+    /// have grown to fill the window, with cover and titles faded out.
     Main {
         split: f32,
         pull: Option<beam::Pull>,
+        focus: f32,
     },
     /// Big centered lyrics (second screen).
     LyricsOnly,
@@ -626,12 +646,18 @@ impl VisualApp {
         });
 
         match content {
-            Content::Main { split, pull } => {
+            Content::Main { split, pull, focus } => {
                 // Without lyrics below, the cover block moves to the middle.
                 let center = egui::emath::lerp(0.40..=0.5, split);
                 let layout = Layout::new(rect, center);
-                self.draw_cover(ui, &layout, f.pulse);
-                self.draw_titles(ui, &layout, np);
+                let focus = ease_in_out_cubic(focus);
+                if focus < 1.0 {
+                    ui.scope(|ui| {
+                        ui.multiply_opacity(1.0 - focus);
+                        self.draw_cover(ui, &layout, f.pulse);
+                        self.draw_titles(ui, &layout, np);
+                    });
+                }
                 // Once poured into the spark the lyrics stay gone, rather
                 // than coming back for the rest of the plain fade.
                 let visible = match pull {
@@ -639,24 +665,42 @@ impl VisualApp {
                     None => split < 1.0,
                 };
                 if let (true, Some(lyrics), Some(scroll)) = (visible, synced, scroll) {
-                    let mut painter = painter.clone();
-                    if pull.is_none() {
-                        painter.multiply_opacity(1.0 - split);
+                    let (center_y, size) = lyrics_placement(rect, focus);
+                    if pull.is_none() && focus > 0.0 && focus < 1.0 {
+                        // Growing: laid out once at the full size and scaled,
+                        // since a new font size every frame stalls on the glyph atlas.
+                        let big = big_lyrics_size(rect);
+                        let s = size / big;
+                        let anchor = rect.center();
+                        let transform = TSTransform::new(
+                            Vec2::new(anchor.x * (1.0 - s), center_y - s * anchor.y),
+                            s,
+                        );
+                        ui.with_visual_transform(transform, |ui| {
+                            let mut painter = ui.painter().clone();
+                            painter.multiply_opacity(1.0 - split);
+                            draw_lyrics(&painter, rect, lyrics, scroll, anchor.y, big, None);
+                        });
+                    } else {
+                        let mut painter = painter.clone();
+                        if pull.is_none() {
+                            painter.multiply_opacity(1.0 - split);
+                        }
+                        draw_lyrics(
+                            &painter,
+                            rect,
+                            lyrics,
+                            scroll,
+                            center_y,
+                            size,
+                            pull.as_ref(),
+                        );
                     }
-                    draw_lyrics(
-                        &painter,
-                        rect,
-                        lyrics,
-                        scroll,
-                        main_lyrics_y(rect),
-                        main_lyrics_size(rect),
-                        pull.as_ref(),
-                    );
                 }
             }
             Content::LyricsOnly => match (synced, scroll) {
                 (Some(lyrics), Some(scroll)) => {
-                    let size = (rect.height() * 0.075).clamp(28.0, 96.0);
+                    let size = big_lyrics_size(rect);
                     draw_lyrics(&painter, rect, lyrics, scroll, rect.center().y, size, None);
                 }
                 // No timed lyrics: show what plays rather than an empty screen.
@@ -684,9 +728,14 @@ impl VisualApp {
         if mirror_key {
             self.toggle_mirror(ctx);
         }
-        // Esc closes the panel first; only then does it leave fullscreen.
+        // Esc closes the panel first, then the big lyrics; only then does it
+        // leave fullscreen.
         if escape && self.settings_open {
             self.close_settings();
+            return;
+        }
+        if escape && self.lyrics_focus {
+            self.lyrics_focus = false;
             return;
         }
         // The title bar has its own double-click (maximize).
@@ -725,6 +774,53 @@ impl VisualApp {
             if std::mem::take(&mut self.restore_maximized) {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
             }
+        }
+    }
+
+    /// A click on the lyrics shows them big; a click anywhere else goes back.
+    fn handle_lyrics_click(&mut self, ctx: &egui::Context, rect: Rect, f: &FrameData, split: f32) {
+        // Nothing to grow, or the lyrics are on their way to another screen.
+        if !has_synced_lyrics(f) || split > 0.0 {
+            self.lyrics_focus = false;
+            return;
+        }
+        let on_bar = self
+            .title_bar
+            .as_ref()
+            .is_some_and(|bar| bar.under_pointer(ctx));
+        if self.settings_open || on_bar {
+            return;
+        }
+        let band = lyrics_band(rect, self.lyrics_focus_anim.progress());
+        let (click, double, hover) = ctx.input(|i| {
+            (
+                i.pointer
+                    .primary_clicked()
+                    .then(|| i.pointer.interact_pos())
+                    .flatten(),
+                i.pointer.button_double_clicked(egui::PointerButton::Primary),
+                i.pointer.hover_pos(),
+            )
+        });
+        if !self.lyrics_focus && hover.is_some_and(|p| band.contains(p)) {
+            ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        if double {
+            // A double-click toggles fullscreen; take back what its first click did.
+            if self
+                .focus_toggled
+                .take()
+                .is_some_and(|t| t.elapsed() < DOUBLE_CLICK)
+            {
+                self.lyrics_focus = !self.lyrics_focus;
+            }
+            return;
+        }
+        if let Some(pos) = click
+            && band.contains(pos) != self.lyrics_focus
+        {
+            self.lyrics_focus = !self.lyrics_focus;
+            self.focus_toggled = Some(Instant::now());
         }
     }
 
@@ -836,6 +932,7 @@ impl VisualApp {
                     Content::Main {
                         split: 0.0,
                         pull: None,
+                        focus: 0.0,
                     }
                 };
                 self.draw_visual(ui, frame, content);
@@ -984,20 +1081,19 @@ impl VisualApp {
             Color32::from_white_alpha(220),
             layout.text_width - artist_indent,
         );
+        let paused = np.state == PlaybackState::Paused;
         let mut album = np.track.album.clone().unwrap_or_default();
-        if np.state == PlaybackState::Paused {
-            album = if album.is_empty() {
-                "⏸  Pozastaveno".to_owned()
-            } else {
-                format!("{album}   ·   ⏸  Pozastaveno")
-            };
+        if paused && !album.is_empty() {
+            album.push_str("   ·   ");
         }
-        let album = painter.layout(
-            album,
-            regular(layout.title_size * 0.3),
-            Color32::from_white_alpha(130),
-            layout.text_width,
-        );
+        let album_size = layout.title_size * 0.3;
+        let album_color = Color32::from_white_alpha(130);
+        let album = painter.layout(album, regular(album_size), album_color, layout.text_width);
+        // The pause sign is drawn, not taken from the font: the font's ⏸
+        // is a clumsy glyph that sits off the text's baseline.
+        let paused_label = paused.then(|| {
+            painter.layout_no_wrap("Pozastaveno".to_owned(), regular(album_size), album_color)
+        });
 
         let gap = layout.title_size * 0.35;
         let artist_row = artist
@@ -1034,7 +1130,34 @@ impl VisualApp {
             Color32::WHITE,
         );
         y += artist_row + gap * 0.6;
-        painter.galley(Pos2::new(layout.text_left, y), album, Color32::WHITE);
+        let album_pos = Pos2::new(layout.text_left, y);
+        if let Some(label) = paused_label {
+            // Right after the album, on its last line.
+            let row = album
+                .rows
+                .last()
+                .map_or(Rect::from_min_size(Pos2::ZERO, Vec2::new(0.0, label.size().y)), |r| {
+                    r.rect()
+                });
+            let height = album_size * 0.62;
+            let bar = Vec2::new(height * 0.3, height);
+            let left = album_pos.x + if album.is_empty() { 0.0 } else { row.right() };
+            let center_y = album_pos.y + row.center().y;
+            for x in [left, left + bar.x + height * 0.26] {
+                painter.rect_filled(
+                    Rect::from_min_size(Pos2::new(x, center_y - bar.y / 2.0), bar),
+                    bar.x / 2.0,
+                    album_color,
+                );
+            }
+            let label_x = left + bar.x * 2.0 + height * 0.26 + album_size * 0.45;
+            painter.galley(
+                Pos2::new(label_x, center_y - label.size().y / 2.0),
+                label,
+                Color32::WHITE,
+            );
+        }
+        painter.galley(album_pos, album, Color32::WHITE);
     }
 }
 
@@ -1105,15 +1228,40 @@ fn main_lyrics_y(rect: Rect) -> f32 {
     rect.top() + rect.height() * 0.83
 }
 
-/// Where the Ctrl+D spark gathers: on the current lyric line, or on the
-/// cover when there are no timed lyrics to pour into it.
-fn spark_origin(rect: Rect, f: &FrameData, split: f32) -> Pos2 {
-    let has_lyrics = !f.idle
+/// Lyrics filling a window: the second screen, or clicked on the main one.
+fn big_lyrics_size(rect: Rect) -> f32 {
+    (rect.height() * 0.075).clamp(28.0, 96.0)
+}
+
+/// Current line and font size of the main window's lyrics, `focus` (0 -> 1,
+/// eased) of the way from under the cover to big in the middle.
+fn lyrics_placement(rect: Rect, focus: f32) -> (f32, f32) {
+    let y = egui::emath::lerp(main_lyrics_y(rect)..=rect.center().y, focus);
+    let size = egui::emath::lerp(main_lyrics_size(rect)..=big_lyrics_size(rect), focus);
+    (y, size)
+}
+
+/// Where a click counts as on the lyrics: the current line and one either side.
+fn lyrics_band(rect: Rect, focus: f32) -> Rect {
+    let (y, size) = lyrics_placement(rect, ease_in_out_cubic(focus));
+    Rect::from_center_size(
+        Pos2::new(rect.center().x, y),
+        Vec2::new(rect.width() * 0.9, size * 1.3 * 3.0),
+    )
+}
+
+fn has_synced_lyrics(f: &FrameData) -> bool {
+    !f.idle
         && f.enrichment
             .as_ref()
             .and_then(|e| e.lyrics.as_ref())
-            .is_some_and(|l| !l.synced.is_empty());
-    if has_lyrics {
+            .is_some_and(|l| !l.synced.is_empty())
+}
+
+/// Where the Ctrl+D spark gathers: on the current lyric line, or on the
+/// cover when there are no timed lyrics to pour into it.
+fn spark_origin(rect: Rect, f: &FrameData, split: f32) -> Pos2 {
+    if has_synced_lyrics(f) {
         Pos2::new(rect.center().x, main_lyrics_y(rect))
     } else {
         Layout::new(rect, egui::emath::lerp(0.40..=0.5, split))
