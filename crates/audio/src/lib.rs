@@ -31,6 +31,17 @@ const BEAT_RELEASE: Duration = Duration::from_millis(300);
 /// Faster than this is not a beat but a roll or noise.
 const MIN_BEAT_GAP: Duration = Duration::from_millis(280);
 const SILENCE_RMS: f32 = 1e-4;
+/// Edges (Hz) of the 16 channels WLED's audio-reactive effects expect, as
+/// its own FFT splits them.
+const SPECTRUM_EDGES: [f32; 17] = [
+    43.0, 86.0, 129.0, 216.0, 301.0, 430.0, 560.0, 818.0, 1077.0, 1421.0, 1895.0, 2412.0, 3101.0,
+    3963.0, 5072.0, 6452.0, 9054.0,
+];
+/// Music has less energy up high; lift the channels by this much per octave
+/// above 1 kHz (and lower them below) so the spectrum looks even.
+const SPECTRUM_TILT_DB_PER_OCTAVE: f32 = 3.0;
+/// The spectrum is for lights, which may flicker: it jumps up and falls fast.
+const SPECTRUM_RELEASE: Duration = Duration::from_millis(120);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Input {
@@ -52,6 +63,19 @@ pub struct Levels {
     pub signal: bool,
     /// Raw, unsmoothed loudness of the last block (for level meters).
     pub rms: f32,
+    /// Counts detected beats, so a reader polling slower than the analysis
+    /// still sees each one.
+    pub beats: u32,
+    /// 16 channels from 43 Hz to 9 kHz (see `SPECTRUM_EDGES`), 0..1, on one
+    /// shared scale so their shape stays.
+    pub spectrum: [f32; 16],
+    /// Loudness 0..1 of the last block, unsmoothed.
+    pub volume_raw: f32,
+    /// Loudness 0..1, smoothed like the bands.
+    pub volume: f32,
+    /// The strongest frequency (Hz) and its level 0..1.
+    pub peak_hz: f32,
+    pub peak_level: f32,
 }
 
 /// A running capture. Cheap to clone; capture stops when the last clone drops.
@@ -240,7 +264,14 @@ struct Analyzer {
     flux_history: VecDeque<f32>,
     last_beat: Instant,
     beat: f32,
+    beats: u32,
     silent_since: Option<Instant>,
+    channel_bins: [(usize, usize); 16],
+    channels: [f32; 16],
+    channel_peak_db: f32,
+    volume_peak_db: f32,
+    volume: f32,
+    bin_hz: f32,
 }
 
 impl Analyzer {
@@ -260,11 +291,21 @@ impl Analyzer {
             window,
             spectrum: vec![Complex::default(); FFT_SIZE],
             bands: [band(BASS), band(MID), band(TREBLE)],
+            channel_bins: std::array::from_fn(|i| {
+                let lo = bin(SPECTRUM_EDGES[i]);
+                (lo, bin(SPECTRUM_EDGES[i + 1]).max(lo + 1))
+            }),
+            channels: [0.0; 16],
+            channel_peak_db: -60.0,
+            volume_peak_db: -60.0,
+            volume: 0.0,
+            bin_hz: sample_rate / FFT_SIZE as f32,
             last_frame: Instant::now(),
             previous_bass: 0.0,
             flux_history: VecDeque::with_capacity(64),
             last_beat: Instant::now(),
             beat: 0.0,
+            beats: 0,
             silent_since: None,
         }
     }
@@ -333,9 +374,27 @@ impl Analyzer {
         if is_beat && now - self.last_beat >= MIN_BEAT_GAP {
             self.last_beat = now;
             self.beat = 1.0;
+            self.beats = self.beats.wrapping_add(1);
         } else {
             self.beat -= self.beat * smoothing(dt, BEAT_RELEASE);
         }
+
+        // Loudness on the same kind of scale: the recent peak is 1.
+        let rms_db = 20.0 * (rms + 1e-9).log10();
+        self.volume_peak_db = (self.volume_peak_db - PEAK_DECAY_DB_PER_SEC * dt).max(rms_db);
+        let volume_raw = if signal {
+            ((rms_db - (self.volume_peak_db - DYNAMIC_RANGE_DB)) / DYNAMIC_RANGE_DB).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let tau = if volume_raw > self.volume {
+            ATTACK
+        } else {
+            RELEASE
+        };
+        self.volume += (volume_raw - self.volume) * smoothing(dt, tau);
+
+        let (peak_hz, peak_level) = self.update_spectrum(signal, dt);
 
         Levels {
             bass: self.bands[0].level,
@@ -344,7 +403,62 @@ impl Analyzer {
             beat: self.beat,
             signal,
             rms,
+            beats: self.beats,
+            spectrum: self.channels,
+            volume_raw,
+            volume: self.volume,
+            peak_hz,
+            peak_level,
         }
+    }
+
+    /// Updates the 16 channels from the current FFT and returns the strongest
+    /// frequency with its level.
+    fn update_spectrum(&mut self, signal: bool, dt: f32) -> (f32, f32) {
+        let mut dbs = [0.0f32; 16];
+        for (db, &(lo, hi)) in dbs.iter_mut().zip(&self.channel_bins) {
+            let energy = self.spectrum[lo..hi]
+                .iter()
+                .map(|c| c.norm_sqr())
+                .sum::<f32>()
+                / (hi - lo) as f32;
+            let center = ((lo + hi) as f32 / 2.0 * self.bin_hz).max(1.0);
+            *db = 10.0 * (energy + 1e-12).log10()
+                + SPECTRUM_TILT_DB_PER_OCTAVE * (center / 1000.0).log2();
+        }
+        let loudest = dbs.iter().copied().fold(f32::MIN, f32::max);
+        self.channel_peak_db = (self.channel_peak_db - PEAK_DECAY_DB_PER_SEC * dt).max(loudest);
+        let floor = self.channel_peak_db - DYNAMIC_RANGE_DB;
+        for (level, db) in self.channels.iter_mut().zip(dbs) {
+            let target = if signal {
+                ((db - floor) / DYNAMIC_RANGE_DB).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            if target > *level {
+                *level = target;
+            } else {
+                *level += (target - *level) * smoothing(dt, SPECTRUM_RELEASE);
+            }
+        }
+
+        let (first, last) = (self.channel_bins[0].0, self.channel_bins[15].1);
+        let peak = (first..last)
+            .max_by(|&a, &b| {
+                self.spectrum[a]
+                    .norm_sqr()
+                    .total_cmp(&self.spectrum[b].norm_sqr())
+            })
+            .unwrap_or(first);
+        let channel = self
+            .channel_bins
+            .iter()
+            .position(|&(lo, hi)| (lo..hi).contains(&peak))
+            .unwrap_or(0);
+        if !signal {
+            return (0.0, 0.0);
+        }
+        (peak as f32 * self.bin_hz, self.channels[channel])
     }
 }
 
@@ -374,6 +488,25 @@ mod tests {
         assert!(levels.signal);
         assert!(levels.bass > 0.8, "bass {}", levels.bass);
         assert!(levels.treble < 0.3, "treble {}", levels.treble);
+    }
+
+    #[test]
+    fn tone_lights_up_its_spectrum_channel() {
+        let mut analyzer = Analyzer::new(48_000.0);
+        let mut levels = Levels::default();
+        for _ in 0..60 {
+            analyzer.last_frame = Instant::now() - FRAME;
+            levels = analyzer.process(&tone(1000.0, 0.5, 48_000.0));
+        }
+        // 1 kHz falls in the 818..1077 Hz channel.
+        assert!(levels.spectrum[7] > 0.9, "spectrum {:?}", levels.spectrum);
+        assert!(levels.spectrum[0] < 0.3, "spectrum {:?}", levels.spectrum);
+        assert!(
+            (levels.peak_hz - 1000.0).abs() < 30.0,
+            "peak {}",
+            levels.peak_hz
+        );
+        assert!(levels.volume > 0.8, "volume {}", levels.volume);
     }
 
     #[test]

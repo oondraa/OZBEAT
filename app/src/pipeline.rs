@@ -64,6 +64,7 @@ pub async fn run(opts: Options, scene: SharedScene, settings: SharedSettings) {
         }
     }
     drop(tx);
+    tokio::spawn(crate::wled::run(Arc::clone(&scene), Arc::clone(&settings)));
 
     let enricher = Arc::new(Enricher::new(mv_enrich::Config::from_env()));
     let (enriched_tx, mut enriched_rx) = mpsc::unbounded_channel::<(String, Arc<Enrichment>)>();

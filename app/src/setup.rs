@@ -129,12 +129,12 @@ pub fn show(
                 .show(ui, |ui| {
                     options(ui, &mut s, devices, audio, &|i| reveal(2 + i));
                     if let Some(update) = update {
-                        block(ui, reveal(5), |ui| update_section(ui, update));
+                        block(ui, reveal(6), |ui| update_section(ui, update));
                     }
                 });
 
             ui.add_space(16.0);
-            block(ui, reveal(6), |ui| {
+            block(ui, reveal(7), |ui| {
                 footer(ui, &mut done);
             });
         });
@@ -317,6 +317,28 @@ fn options(
             ui.add(egui::Slider::new(&mut s.intensity, 0.0..=1.0).show_value(false));
             ui.label(RichText::new("Výrazné").weak());
         });
+    });
+
+    block(ui, reveal(3), |ui| {
+        section(
+            ui,
+            "Světlo WLED",
+            "Světlo s WLED bude svítit do rytmu a v barvách obalu. Nech prázdné, když žádné nemáš.",
+        );
+        ui.add(
+            egui::TextEdit::singleline(&mut s.wled)
+                .hint_text("IP adresa, třeba 192.168.1.50")
+                .desired_width(260.0),
+        );
+        if !s.wled.trim().is_empty() {
+            ui.label(
+                RichText::new(
+                    "Ve WLED zapni AudioReactive a v něm Sync → Receive,                      pak vyber některý ze zvukových efektů (♪).",
+                )
+                .small()
+                .weak(),
+            );
+        }
     });
 }
 

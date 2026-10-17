@@ -30,6 +30,7 @@ Play music the way you normally do. OZBEAT notices it and fills the screen with 
 - **Reacts to the music.** Visuals swell with the sound instead of flashing.
 - **Two screens.** Cover on one, lyrics on the other.
 - **Screensaver.** The same picture when your PC is idle.
+- **WLED lights.** Enter your WLED light's IP address in the settings and it moves to the music in the colors of the cover.
 
 ## Get started
 
