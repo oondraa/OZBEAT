@@ -30,6 +30,8 @@ pub struct Settings {
     /// 0..1; 0.5 is the default amount of beat-driven motion.
     pub intensity: f32,
     pub youtube: bool,
+    /// IP address or host name of a WLED light to drive; empty = off.
+    pub wled: String,
 }
 
 impl Default for Settings {
@@ -40,6 +42,7 @@ impl Default for Settings {
             audio: AudioMode::Auto,
             intensity: 0.5,
             youtube: false,
+            wled: String::new(),
         }
     }
 }

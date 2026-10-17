@@ -13,6 +13,7 @@ mod setup;
 mod titlebar;
 mod ui;
 mod update;
+mod wled;
 
 use std::process::ExitCode;
 use std::sync::Arc;
