@@ -127,6 +127,9 @@ fn read_session(
         position,
         position_at,
         device: Some(app_name(app)),
+        // Windows doesn't tell an app's volume through the media session.
+        volume: None,
+        muted: false,
     }))
 }
 

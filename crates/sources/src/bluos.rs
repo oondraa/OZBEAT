@@ -194,6 +194,12 @@ fn parse_status(
             position: seconds("secs"),
             position_at: now,
             device: Some(name.unwrap_or(host).to_owned()),
+            // 0..100; players with a fixed-level output report -1.
+            volume: field("volume")
+                .and_then(|v| v.parse::<f32>().ok())
+                .filter(|v| *v >= 0.0)
+                .map(|v| (v / 100.0).min(1.0)),
+            muted: field("mute").as_deref() == Some("1"),
         }),
     })
 }
@@ -212,6 +218,8 @@ mod tests {
             <secs>83</secs>
             <totlen>320</totlen>
             <state>play</state>
+            <volume>13</volume>
+            <mute>0</mute>
         </status>"#;
         let now = SystemTime::now();
         let status = parse_status(body, "10.0.0.5", Some("Ondra Pulse"), now).unwrap();
@@ -233,6 +241,8 @@ mod tests {
         assert_eq!(np.duration, Some(Duration::from_secs(320)));
         assert_eq!(np.position_at, now);
         assert_eq!(np.device.as_deref(), Some("Ondra Pulse"));
+        assert_eq!(np.volume, Some(0.13));
+        assert!(!np.muted);
     }
 
     #[test]

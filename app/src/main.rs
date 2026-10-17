@@ -13,6 +13,7 @@ mod setup;
 mod titlebar;
 mod ui;
 mod update;
+mod volume;
 mod wled;
 
 use std::process::ExitCode;

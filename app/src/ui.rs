@@ -23,6 +23,7 @@ use crate::settings::SharedSettings;
 use crate::setup::{self, BRAND_BLUE};
 use crate::titlebar::TitleBar;
 use crate::update::{self, SharedUpdate};
+use crate::volume::VolumeHud;
 
 /// How long the lyrics take to scroll to the next line.
 const LYRIC_SCROLL: Duration = Duration::from_millis(450);
@@ -41,11 +42,13 @@ const MIRROR_READY: u32 = 3;
 /// Clicking the lyrics: they grow to fill the window, and shrink back.
 const FOCUS_OPEN: Duration = Duration::from_millis(550);
 const FOCUS_CLOSE: Duration = Duration::from_millis(400);
+/// Lyrics fading in once they have loaded (seconds).
+const LYRICS_READY: f32 = 0.45;
 /// A second click this soon after a focus toggle is a double-click (fullscreen).
 const DOUBLE_CLICK: Duration = Duration::from_millis(400);
 
 pub(crate) const BOLD: &str = "bold";
-const REGULAR: &str = "regular";
+pub(crate) const REGULAR: &str = "regular";
 /// Nicer system fonts when present; egui's built-in font is the fallback.
 const BOLD_FONTS: &[&str] = &[
     "C:\\Windows\\Fonts\\segoeuib.ttf",
@@ -147,6 +150,7 @@ pub struct VisualApp {
     lyrics_focus_anim: Tween,
     /// When a click last toggled `lyrics_focus`, to undo it on a double-click.
     focus_toggled: Option<Instant>,
+    volume: VolumeHud,
     /// Animation phase of the background; advances faster with louder mids,
     /// so the flow speeds up smoothly instead of jumping.
     flow: f32,
@@ -280,6 +284,7 @@ impl VisualApp {
             lyrics_focus: false,
             lyrics_focus_anim: Tween::new(FOCUS_OPEN, FOCUS_CLOSE),
             focus_toggled: None,
+            volume: VolumeHud::default(),
             flow: 0.0,
             last_frame: Instant::now(),
             mode,
@@ -445,6 +450,11 @@ impl eframe::App for VisualApp {
         }
         for slot in 0..self.screens.len() {
             self.show_screen(&ctx, slot, &frame);
+        }
+        self.volume.update(frame.now_playing.as_ref());
+        if panel == 0.0 {
+            self.volume
+                .draw(&ctx, ui.max_rect(), color(frame.palette[0]));
         }
         if panel > 0.0 {
             // Dim the visuals a little so the panel reads well.
@@ -664,6 +674,19 @@ impl VisualApp {
                     Some(pull) => !pull.done(),
                     None => split < 1.0,
                 };
+                // Lyrics fade in when they arrive, e.g. after a song change.
+                let ready = ui.ctx().animate_bool_with_time(
+                    egui::Id::new("ozbeat-lyrics-ready"),
+                    synced.is_some(),
+                    LYRICS_READY,
+                );
+                // Big lyrics stay big across songs; until the new song's
+                // lyrics are in, show what plays in their place.
+                if visible && focus > 0.0 && ready < 1.0 {
+                    let mut painter = painter.clone();
+                    painter.multiply_opacity(focus * (1.0 - ready));
+                    draw_caption(&painter, rect, np);
+                }
                 if let (true, Some(lyrics), Some(scroll)) = (visible, synced, scroll) {
                     let (center_y, size) = lyrics_placement(rect, focus);
                     if pull.is_none() && focus > 0.0 && focus < 1.0 {
@@ -678,11 +701,12 @@ impl VisualApp {
                         );
                         ui.with_visual_transform(transform, |ui| {
                             let mut painter = ui.painter().clone();
-                            painter.multiply_opacity(1.0 - split);
+                            painter.multiply_opacity((1.0 - split) * ready);
                             draw_lyrics(&painter, rect, lyrics, scroll, anchor.y, big, None);
                         });
                     } else {
                         let mut painter = painter.clone();
+                        painter.multiply_opacity(ready);
                         if pull.is_none() {
                             painter.multiply_opacity(1.0 - split);
                         }
@@ -779,9 +803,14 @@ impl VisualApp {
 
     /// A click on the lyrics shows them big; a click anywhere else goes back.
     fn handle_lyrics_click(&mut self, ctx: &egui::Context, rect: Rect, f: &FrameData, split: f32) {
-        // Nothing to grow, or the lyrics are on their way to another screen.
-        if !has_synced_lyrics(f) || split > 0.0 {
+        // The lyrics are on their way to another screen.
+        if split > 0.0 {
             self.lyrics_focus = false;
+            return;
+        }
+        // Without lyrics there is nothing to grow. Big lyrics stay big while
+        // the next song's load, though, until a click or Esc closes them.
+        if !has_synced_lyrics(f) && !self.lyrics_focus {
             return;
         }
         let on_bar = self

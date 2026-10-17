@@ -35,6 +35,9 @@ pub struct NowPlaying {
     pub position_at: SystemTime,
     /// Human-readable player name ("Spotify", "Ondra Pulse"), for display only.
     pub device: Option<String>,
+    /// The player's own volume (0..1), when the source reports one.
+    pub volume: Option<f32>,
+    pub muted: bool,
 }
 
 impl NowPlaying {
@@ -230,6 +233,8 @@ mod tests {
             position: Some(Duration::from_secs(pos)),
             position_at: at,
             device: None,
+            volume: None,
+            muted: false,
         }
     }
 
