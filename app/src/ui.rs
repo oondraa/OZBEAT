@@ -1531,24 +1531,9 @@ fn install_style(ctx: &egui::Context) {
 
 /// The OZBEAT wordmark card for the settings panel.
 fn load_logo(ctx: &egui::Context) -> Option<TextureHandle> {
-    let png = include_bytes!("../../assety/OZBEAT_dark_big.png");
-    let mut image = image::load_from_memory(png).ok()?.to_rgba8();
-    // The card is light-on-black; key the black out so it sits on any background.
-    for pixel in image.pixels_mut() {
-        let [r, g, b, a] = pixel.0;
-        let key = r.max(g).max(b);
-        if key > 0 {
-            let lift = |c: u8| (u16::from(c) * 255 / u16::from(key)) as u8;
-            pixel.0 = [
-                lift(r),
-                lift(g),
-                lift(b),
-                (u16::from(key) * u16::from(a) / 255) as u8,
-            ];
-        } else {
-            pixel.0 = [0, 0, 0, 0];
-        }
-    }
+    let png = include_bytes!("../../assety/OZBEAT_B_B.png");
+    // A dark rounded card with its own transparent corners; shown as it is.
+    let image = image::load_from_memory(png).ok()?.to_rgba8();
     let size = [image.width() as usize, image.height() as usize];
     let image = egui::ColorImage::from_rgba_unmultiplied(size, image.as_raw());
     let options = TextureOptions {

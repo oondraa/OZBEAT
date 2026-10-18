@@ -212,7 +212,7 @@ pub(crate) fn primary_monitor(displays: &[display_info::DisplayInfo]) -> Option<
 
 /// Title bar and taskbar icon; the dark variant reads well on both themes.
 pub(crate) fn window_icon() -> Option<egui::IconData> {
-    let png = include_bytes!("../../assety/OZBEAT_dark_logo.png");
+    let png = include_bytes!("../../assety/OZBEAT3logo.png");
     let image = image::load_from_memory(png).ok()?.to_rgba8();
     Some(egui::IconData {
         width: image.width(),
