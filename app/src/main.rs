@@ -6,6 +6,7 @@ mod art;
 mod background;
 mod beam;
 mod cache;
+mod control;
 mod frameless;
 mod pipeline;
 mod settings;

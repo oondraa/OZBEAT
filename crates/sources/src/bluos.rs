@@ -110,6 +110,43 @@ async fn run(host: String, tx: EventSender) {
     }
 }
 
+/// Sets the player's volume, 0..=100.
+pub fn set_volume(host: &str, level: u8) -> Result<(), String> {
+    command(host, &format!("/Volume?level={}", level.min(100)))
+}
+
+/// Pauses a playing player, resumes a paused one.
+pub fn toggle_pause(host: &str) -> Result<(), String> {
+    command(host, "/Pause?toggle=1")
+}
+
+/// A one-off request from the UI side, which has no async runtime; the
+/// answer (the new state) arrives through the status long poll anyway.
+fn command(host: &str, path: &str) -> Result<(), String> {
+    use std::io::{Read, Write};
+    use std::net::{TcpStream, ToSocketAddrs};
+
+    let timeout = Duration::from_secs(3);
+    let addr = (host, PORT)
+        .to_socket_addrs()
+        .map_err(|e| e.to_string())?
+        .next()
+        .ok_or("no address")?;
+    let mut stream = TcpStream::connect_timeout(&addr, timeout).map_err(|e| e.to_string())?;
+    stream.set_read_timeout(Some(timeout)).map_err(|e| e.to_string())?;
+    write!(stream, "GET {path} HTTP/1.0
+Host: {host}
+
+").map_err(|e| e.to_string())?;
+    let mut head = [0; 12];
+    stream.read_exact(&mut head).map_err(|e| e.to_string())?;
+    // "HTTP/1.1 200"
+    match head.get(9..12) {
+        Some(b"200") => Ok(()),
+        _ => Err(format!("{path}: {}", String::from_utf8_lossy(&head).trim())),
+    }
+}
+
 /// The name set in the BluOS app ("Living Room"), from `/SyncStatus`.
 async fn fetch_name(client: &reqwest::Client, host: &str) -> Option<String> {
     let body = fetch(client, &format!("http://{host}:{PORT}/SyncStatus"))
