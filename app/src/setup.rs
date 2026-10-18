@@ -21,11 +21,6 @@ const WIDTH: f32 = 540.0;
 const RADIUS: f32 = 28.0;
 /// Dark text on the white glass buttons.
 const INK: Color32 = Color32::from_rgb(0x12, 0x12, 0x16);
-/// The wordmark inside the 1200x600 logo card (UV space).
-const LOGO_UV: Rect = Rect {
-    min: Pos2::new(0.2, 0.36),
-    max: Pos2::new(0.78, 0.64),
-};
 
 /// Draws the panel. Returns `false` once the user confirms with "Hotovo".
 /// The panel is frosted glass: a light, see-through pane over the blurred
@@ -96,14 +91,11 @@ pub fn show(
             ui.multiply_opacity(opacity);
             ui.set_width(WIDTH);
             if let Some(logo) = logo {
-                let aspect = (LOGO_UV.height() * 600.0) / (LOGO_UV.width() * 1200.0);
-                let size = Vec2::new(WIDTH * 0.32, WIDTH * 0.32 * aspect);
+                let aspect = logo.size()[1] as f32 / logo.size()[0] as f32;
+                let size = Vec2::new(WIDTH * 0.4, WIDTH * 0.4 * aspect);
                 block(ui, reveal(0), |ui| {
                     ui.vertical_centered(|ui| {
-                        ui.add(
-                            egui::Image::from_texture(SizedTexture::new(logo.id(), size))
-                                .uv(LOGO_UV),
-                        );
+                        ui.add(egui::Image::from_texture(SizedTexture::new(logo.id(), size)));
                     });
                 });
             }

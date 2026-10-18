@@ -1,4 +1,4 @@
-<p align="center"><img src="assety/OZBEAT_dark_big.png" alt="OZBEAT" width="420"></p>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="assety/OZBEAT_B_B.png"><img src="assety/OZBEAT_B_W.png" alt="OZBEAT" width="420"></picture></p>
 
 <p align="center">
   <b>A music visualizer for Windows.</b><br>
