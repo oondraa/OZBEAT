@@ -77,6 +77,17 @@ fn run(tx: &EventSender) -> windows::core::Result<()> {
     }
 }
 
+/// Pauses or resumes the player with this app id ("Spotify.exe").
+pub fn toggle_play_pause(app: &str) -> windows::core::Result<()> {
+    let manager = Manager::RequestAsync()?.join()?;
+    for session in manager.GetSessions()? {
+        if session.SourceAppUserModelId()? == app {
+            session.TryTogglePlayPauseAsync()?.join()?;
+        }
+    }
+    Ok(())
+}
+
 fn read_session(
     session: &Session,
     app: &str,

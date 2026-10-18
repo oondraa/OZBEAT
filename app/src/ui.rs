@@ -23,6 +23,7 @@ use crate::settings::SharedSettings;
 use crate::setup::{self, BRAND_BLUE};
 use crate::titlebar::TitleBar;
 use crate::update::{self, SharedUpdate};
+use crate::control::Control;
 use crate::volume::VolumeHud;
 
 /// How long the lyrics take to scroll to the next line.
@@ -151,6 +152,7 @@ pub struct VisualApp {
     /// When a click last toggled `lyrics_focus`, to undo it on a double-click.
     focus_toggled: Option<Instant>,
     volume: VolumeHud,
+    control: Control,
     /// Animation phase of the background; advances faster with louder mids,
     /// so the flow speeds up smoothly instead of jumping.
     flow: f32,
@@ -285,6 +287,7 @@ impl VisualApp {
             lyrics_focus_anim: Tween::new(FOCUS_OPEN, FOCUS_CLOSE),
             focus_toggled: None,
             volume: VolumeHud::default(),
+            control: Control::default(),
             flow: 0.0,
             last_frame: Instant::now(),
             mode,
@@ -752,6 +755,7 @@ impl VisualApp {
         if mirror_key {
             self.toggle_mirror(ctx);
         }
+        self.handle_playback_keys(ctx);
         // Esc closes the panel first, then the big lyrics; only then does it
         // leave fullscreen.
         if escape && self.settings_open {
@@ -768,6 +772,42 @@ impl VisualApp {
             .as_ref()
             .is_some_and(|bar| bar.under_pointer(ctx));
         self.handle_fullscreen(ctx, !self.settings_open && !on_bar);
+    }
+
+    /// Ctrl+Up/Down turns what plays louder or quieter, Ctrl+Space pauses
+    /// and resumes it.
+    fn handle_playback_keys(&mut self, ctx: &egui::Context) {
+        if ctx.egui_wants_keyboard_input() {
+            return; // typing in a settings field
+        }
+        let (up, down, space) = ctx.input(|i| {
+            let ctrl = i.modifiers.command;
+            (
+                ctrl && i.key_pressed(egui::Key::ArrowUp),
+                ctrl && i.key_pressed(egui::Key::ArrowDown),
+                ctrl && i.key_pressed(egui::Key::Space),
+            )
+        });
+        if !(up || down || space) {
+            return;
+        }
+        let (source, now_playing) = {
+            let scene = self.scene.lock().unwrap();
+            (scene.source.clone(), scene.now_playing.clone())
+        };
+        let done = if space {
+            self.control.play_pause(source.as_ref())
+        } else {
+            self.control
+                .step_volume(source.as_ref(), now_playing.as_ref(), up)
+        };
+        if !done {
+            self.show_toast(if source.is_none() {
+                "Nic nehraje"
+            } else {
+                "Tady hlasitost nastavit nejde"
+            });
+        }
     }
 
     /// F11 or double-click toggles fullscreen, Esc leaves it. Double-click is
