@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1" xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
+  <url>
+    <loc>https://oondraa.github.io/OZBEAT/</loc>
+    <lastmod>2026-10-22</lastmod>
+    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/og-ozbeat.png</image:loc></image:image>
+    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/icon-dark.png</image:loc></image:image>
+    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/calin.webp</image:loc></image:image>
+    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/calin1.webp</image:loc></image:image>
+    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/calin2.webp</image:loc></image:image>
+    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/viktorsheen.webp</image:loc></image:image>
+    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/yzo.webp</image:loc></image:image>
+    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/yzo1.webp</image:loc></image:image>
+    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/yzo2.webp</image:loc></image:image>
+    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/video/ptk.jpg</image:loc></image:image>
+    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/video/sheen.jpg</image:loc></image:image>
+    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/video/ye.jpg</image:loc></image:image>
+    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/video/yzo.jpg</image:loc></image:image>
+    <video:video>
+      <video:thumbnail_loc>https://oondraa.github.io/OZBEAT/assets/video/sheen.jpg</video:thumbnail_loc>
+      <video:title>OZBEAT music visualizer: Viktor Sheen - V pekle</video:title>
+      <video:description>Real recording of OZBEAT by oondraa playing Viktor Sheen - V pekle, with the cover art background and synced lyrics.</video:description>
+      <video:content_loc>https://oondraa.github.io/OZBEAT/assets/video/sheen.mp4</video:content_loc>
+    </video:video>
+    <video:video>
+      <video:thumbnail_loc>https://oondraa.github.io/OZBEAT/assets/video/yzo.jpg</video:thumbnail_loc>
+      <video:title>OZBEAT music visualizer: Yzomandias - COUPÉ</video:title>
+      <video:description>Real recording of OZBEAT by oondraa playing Yzomandias - COUPÉ, with the cover art background and synced lyrics.</video:description>
+      <video:content_loc>https://oondraa.github.io/OZBEAT/assets/video/yzo.mp4</video:content_loc>
+    </video:video>
+    <video:video>
+      <video:thumbnail_loc>https://oondraa.github.io/OZBEAT/assets/video/ptk.jpg</video:thumbnail_loc>
+      <video:title>OZBEAT music visualizer: PTK - Víš jak bolí říkat RIP</video:title>
+      <video:description>Real recording of OZBEAT by oondraa playing PTK - Víš jak bolí říkat RIP, with the cover art background and synced lyrics.</video:description>
+      <video:content_loc>https://oondraa.github.io/OZBEAT/assets/video/ptk.mp4</video:content_loc>
+    </video:video>
+    <video:video>
+      <video:thumbnail_loc>https://oondraa.github.io/OZBEAT/assets/video/ye.jpg</video:thumbnail_loc>
+      <video:title>OZBEAT music visualizer: Kanye West - Black Skinhead</video:title>
+      <video:description>Real recording of OZBEAT by oondraa playing Kanye West - Black Skinhead, with the cover art background and synced lyrics.</video:description>
+      <video:content_loc>https://oondraa.github.io/OZBEAT/assets/video/ye.mp4</video:content_loc>
+    </video:video>
+  </url>
+</urlset>
