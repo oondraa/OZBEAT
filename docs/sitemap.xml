@@ -2,43 +2,78 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1" xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
   <url>
     <loc>https://oondraa.github.io/OZBEAT/</loc>
-    <lastmod>2026-10-22</lastmod>
+    <lastmod>2026-10-23</lastmod>
     <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/og-ozbeat.png</image:loc></image:image>
     <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/icon-dark.png</image:loc></image:image>
-    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/calin.webp</image:loc></image:image>
-    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/calin1.webp</image:loc></image:image>
-    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/calin2.webp</image:loc></image:image>
-    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/viktorsheen.webp</image:loc></image:image>
-    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/yzo.webp</image:loc></image:image>
-    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/yzo1.webp</image:loc></image:image>
-    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/yzo2.webp</image:loc></image:image>
-    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/video/ptk.jpg</image:loc></image:image>
-    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/video/sheen.jpg</image:loc></image:image>
-    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/video/ye.jpg</image:loc></image:image>
-    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/video/yzo.jpg</image:loc></image:image>
+    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-calin-superstar-cover.webp</image:loc></image:image>
+    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-calin-superstar-lyrics.webp</image:loc></image:image>
+    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-calin-superstar.webp</image:loc></image:image>
+    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-cashanova-bulhar-praha-den-a-noc.webp</image:loc></image:image>
+    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-churaq-cyril-baroko-2.webp</image:loc></image:image>
+    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-synced-lyrics-amber.webp</image:loc></image:image>
+    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-synced-lyrics-music-video.webp</image:loc></image:image>
+    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-synced-lyrics-pink.webp</image:loc></image:image>
+    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-synced-lyrics-teal.webp</image:loc></image:image>
+    <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-viktor-sheen-cigo-a-kava.webp</image:loc></image:image>
     <video:video>
-      <video:thumbnail_loc>https://oondraa.github.io/OZBEAT/assets/video/sheen.jpg</video:thumbnail_loc>
-      <video:title>OZBEAT music visualizer: Viktor Sheen - V pekle</video:title>
-      <video:description>Real recording of OZBEAT by oondraa playing Viktor Sheen - V pekle, with the cover art background and synced lyrics.</video:description>
-      <video:content_loc>https://oondraa.github.io/OZBEAT/assets/video/sheen.mp4</video:content_loc>
+      <video:thumbnail_loc>https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-calin-superstar.webp</video:thumbnail_loc>
+      <video:title>OZBEAT music visualizer: Calin - SuperStar (feat. Dollar Prync), lyrics over the music video</video:title>
+      <video:description>Real recording of OZBEAT by oondraa, the free music visualizer for Windows: Calin - SuperStar (feat. Dollar Prync), lyrics over the music video.</video:description>
+      <video:content_loc>https://oondraa.github.io/OZBEAT/assets/video/ozbeat-calin-superstar.mp4</video:content_loc>
     </video:video>
     <video:video>
-      <video:thumbnail_loc>https://oondraa.github.io/OZBEAT/assets/video/yzo.jpg</video:thumbnail_loc>
-      <video:title>OZBEAT music visualizer: Yzomandias - COUPÉ</video:title>
-      <video:description>Real recording of OZBEAT by oondraa playing Yzomandias - COUPÉ, with the cover art background and synced lyrics.</video:description>
-      <video:content_loc>https://oondraa.github.io/OZBEAT/assets/video/yzo.mp4</video:content_loc>
+      <video:thumbnail_loc>https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-calin-superstar-cover.webp</video:thumbnail_loc>
+      <video:title>OZBEAT music visualizer: Calin - SuperStar, main screen with the album cover</video:title>
+      <video:description>Real recording of OZBEAT by oondraa, the free music visualizer for Windows: Calin - SuperStar, main screen with the album cover.</video:description>
+      <video:content_loc>https://oondraa.github.io/OZBEAT/assets/video/ozbeat-calin-superstar-cover.mp4</video:content_loc>
     </video:video>
     <video:video>
-      <video:thumbnail_loc>https://oondraa.github.io/OZBEAT/assets/video/ptk.jpg</video:thumbnail_loc>
-      <video:title>OZBEAT music visualizer: PTK - Víš jak bolí říkat RIP</video:title>
-      <video:description>Real recording of OZBEAT by oondraa playing PTK - Víš jak bolí říkat RIP, with the cover art background and synced lyrics.</video:description>
-      <video:content_loc>https://oondraa.github.io/OZBEAT/assets/video/ptk.mp4</video:content_loc>
+      <video:thumbnail_loc>https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-calin-superstar-lyrics.webp</video:thumbnail_loc>
+      <video:title>OZBEAT music visualizer: Calin - SuperStar, second screen with big synced lyrics</video:title>
+      <video:description>Real recording of OZBEAT by oondraa, the free music visualizer for Windows: Calin - SuperStar, second screen with big synced lyrics.</video:description>
+      <video:content_loc>https://oondraa.github.io/OZBEAT/assets/video/ozbeat-calin-superstar-lyrics.mp4</video:content_loc>
     </video:video>
     <video:video>
-      <video:thumbnail_loc>https://oondraa.github.io/OZBEAT/assets/video/ye.jpg</video:thumbnail_loc>
-      <video:title>OZBEAT music visualizer: Kanye West - Black Skinhead</video:title>
-      <video:description>Real recording of OZBEAT by oondraa playing Kanye West - Black Skinhead, with the cover art background and synced lyrics.</video:description>
-      <video:content_loc>https://oondraa.github.io/OZBEAT/assets/video/ye.mp4</video:content_loc>
+      <video:thumbnail_loc>https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-viktor-sheen-cigo-a-kava.webp</video:thumbnail_loc>
+      <video:title>OZBEAT music visualizer: Viktor Sheen - Cígo a káva (feat. Saul)</video:title>
+      <video:description>Real recording of OZBEAT by oondraa, the free music visualizer for Windows: Viktor Sheen - Cígo a káva (feat. Saul).</video:description>
+      <video:content_loc>https://oondraa.github.io/OZBEAT/assets/video/ozbeat-viktor-sheen-cigo-a-kava.mp4</video:content_loc>
+    </video:video>
+    <video:video>
+      <video:thumbnail_loc>https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-cashanova-bulhar-praha-den-a-noc.webp</video:thumbnail_loc>
+      <video:title>OZBEAT music visualizer: Ca$hanova Bulhar - Praha den a noc</video:title>
+      <video:description>Real recording of OZBEAT by oondraa, the free music visualizer for Windows: Ca$hanova Bulhar - Praha den a noc.</video:description>
+      <video:content_loc>https://oondraa.github.io/OZBEAT/assets/video/ozbeat-cashanova-bulhar-praha-den-a-noc.mp4</video:content_loc>
+    </video:video>
+    <video:video>
+      <video:thumbnail_loc>https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-churaq-cyril-baroko-2.webp</video:thumbnail_loc>
+      <video:title>OZBEAT music visualizer: Churaq Cyril - Baroko 2</video:title>
+      <video:description>Real recording of OZBEAT by oondraa, the free music visualizer for Windows: Churaq Cyril - Baroko 2.</video:description>
+      <video:content_loc>https://oondraa.github.io/OZBEAT/assets/video/ozbeat-churaq-cyril-baroko-2.mp4</video:content_loc>
+    </video:video>
+    <video:video>
+      <video:thumbnail_loc>https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-synced-lyrics-music-video.webp</video:thumbnail_loc>
+      <video:title>OZBEAT music visualizer: synced lyrics over a music video</video:title>
+      <video:description>Real recording of OZBEAT by oondraa, the free music visualizer for Windows: synced lyrics over a music video.</video:description>
+      <video:content_loc>https://oondraa.github.io/OZBEAT/assets/video/ozbeat-synced-lyrics-music-video.mp4</video:content_loc>
+    </video:video>
+    <video:video>
+      <video:thumbnail_loc>https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-synced-lyrics-pink.webp</video:thumbnail_loc>
+      <video:title>OZBEAT music visualizer: synced lyrics in the cover's pink</video:title>
+      <video:description>Real recording of OZBEAT by oondraa, the free music visualizer for Windows: synced lyrics in the cover's pink.</video:description>
+      <video:content_loc>https://oondraa.github.io/OZBEAT/assets/video/ozbeat-synced-lyrics-pink.mp4</video:content_loc>
+    </video:video>
+    <video:video>
+      <video:thumbnail_loc>https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-synced-lyrics-amber.webp</video:thumbnail_loc>
+      <video:title>OZBEAT music visualizer: synced lyrics in the cover's amber</video:title>
+      <video:description>Real recording of OZBEAT by oondraa, the free music visualizer for Windows: synced lyrics in the cover's amber.</video:description>
+      <video:content_loc>https://oondraa.github.io/OZBEAT/assets/video/ozbeat-synced-lyrics-amber.mp4</video:content_loc>
+    </video:video>
+    <video:video>
+      <video:thumbnail_loc>https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-synced-lyrics-teal.webp</video:thumbnail_loc>
+      <video:title>OZBEAT music visualizer: synced lyrics in the cover's teal</video:title>
+      <video:description>Real recording of OZBEAT by oondraa, the free music visualizer for Windows: synced lyrics in the cover's teal.</video:description>
+      <video:content_loc>https://oondraa.github.io/OZBEAT/assets/video/ozbeat-synced-lyrics-teal.mp4</video:content_loc>
     </video:video>
   </url>
 </urlset>
