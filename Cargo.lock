@@ -2244,6 +2244,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "windows",
  "windows-sys 0.61.2",
  "winresource",
 ]
@@ -2289,8 +2290,10 @@ dependencies = [
 name = "mv-video"
 version = "0.1.0"
 dependencies = [
+ "aws-lc-rs",
  "dirs",
  "mv-enrich",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",
