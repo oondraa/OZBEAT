@@ -1,7 +1,7 @@
 //! Everything off the UI thread: sources, lookups, image loading, clips.
 //! The UI only ever reads the latest [`Scene`].
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -9,7 +9,7 @@ use mv_audio::{Capture, Input};
 use mv_core::{Device, NowPlaying, PlaybackState, Registry, SourceId, Track};
 use mv_enrich::{Enricher, Enrichment, ImageKind, matching};
 use mv_sources::bluos;
-use mv_video::{Outcome, VideoFetcher};
+use mv_video::{Clip, Outcome, VideoFetcher};
 use tokio::sync::mpsc;
 
 use crate::art::{self, Art};
@@ -40,6 +40,8 @@ pub struct Scene {
     pub enrichment: Option<Arc<Enrichment>>,
     pub art: Option<Arc<Art>>,
     pub video: Option<String>,
+    /// The downloaded clip of the song playing, when clips are on.
+    pub clip: Option<Clip>,
     /// The capture matching the active source; the UI polls it every frame.
     pub audio: Option<Capture>,
     /// Every device seen, enabled or not, for the setup screen.
@@ -75,7 +77,7 @@ pub async fn run(opts: Options, scene: SharedScene, settings: SharedSettings) {
     let mut art_shown = 0;
 
     let mut fetcher: Option<Arc<VideoFetcher>> = None;
-    let (video_tx, mut video_rx) = mpsc::unbounded_channel::<(String, Outcome)>();
+    let (video_tx, mut video_rx) = mpsc::unbounded_channel::<VideoFound>();
     let mut videos = Videos::default();
 
     let mut audio = AudioInputs::default();
@@ -110,10 +112,7 @@ pub async fn run(opts: Options, scene: SharedScene, settings: SharedSettings) {
                     art = Some(loaded);
                 }
             }
-            Some((key, outcome)) = video_rx.recv() => {
-                videos.in_flight = None;
-                videos.done = Some((key, outcome));
-            }
+            Some(found) = video_rx.recv() => videos.found(found),
             _ = tick.tick() => {
                 // Settings can change any time from the setup screen.
                 let settings = settings.lock().unwrap().clone();
@@ -164,6 +163,9 @@ fn publish(
         .filter(|(k, _)| for_track(k))
         .map(|(_, a)| Arc::clone(a));
     scene.video = videos.zip(active).map(|(v, (_, np))| v.status(&np.track));
+    scene.clip = videos
+        .zip(key.as_ref())
+        .and_then(|(v, k)| v.ready.get(k).cloned());
 }
 
 /// Opens captures lazily (the mic only once a speaker is actually playing) and keeps them.
@@ -404,20 +406,40 @@ impl Lookups {
     }
 }
 
+/// A song's clip lookup finished: from the cache only, or a YouTube round.
+struct VideoFound {
+    key: String,
+    outcome: Outcome,
+    cached: bool,
+}
+
 /// One YouTube round at a time; when it finishes, whatever plays then is next.
+/// Clips downloaded before show right away, from the cache.
 #[derive(Default)]
 struct Videos {
     in_flight: Option<String>,
     requested: HashSet<String>,
+    looked_up: HashSet<String>,
+    ready: HashMap<String, Clip>,
     done: Option<(String, Outcome)>,
 }
 
 impl Videos {
+    fn found(&mut self, found: VideoFound) {
+        if let Outcome::Ready(clip) = &found.outcome {
+            self.ready.insert(found.key.clone(), clip.clone());
+        }
+        if !found.cached {
+            self.in_flight = None;
+            self.done = Some((found.key, found.outcome));
+        }
+    }
+
     fn request(
         &mut self,
         np: &NowPlaying,
         fetcher: &Arc<VideoFetcher>,
-        tx: &mpsc::UnboundedSender<(String, Outcome)>,
+        tx: &mpsc::UnboundedSender<VideoFound>,
     ) {
         let played_enough = np.state == PlaybackState::Playing
             && np
@@ -427,6 +449,19 @@ impl Videos {
         let Some(artist) = np.track.artist.clone() else {
             return;
         };
+        if self.looked_up.insert(key.clone()) {
+            let (fetcher, tx, key) = (Arc::clone(fetcher), tx.clone(), key.clone());
+            let (artist, title) = (artist.clone(), np.track.title.clone());
+            tokio::spawn(async move {
+                if let Some(clip) = fetcher.cached(&artist, &title).await {
+                    let outcome = Outcome::Ready(clip);
+                    let _ = tx.send(VideoFound { key, outcome, cached: true });
+                }
+            });
+        }
+        if self.ready.contains_key(&key) {
+            return;
+        }
         if !played_enough || self.in_flight.is_some() || self.requested.contains(&key) {
             return;
         }
@@ -437,7 +472,7 @@ impl Videos {
         let (fetcher, tx) = (Arc::clone(fetcher), tx.clone());
         tokio::spawn(async move {
             let outcome = fetcher.fetch(&artist, &title, duration).await;
-            let _ = tx.send((key, outcome));
+            let _ = tx.send(VideoFound { key, outcome, cached: false });
         });
     }
 
@@ -447,7 +482,15 @@ impl Videos {
             return "searching / downloading (spaced out on purpose)".into();
         }
         match self.done.as_ref().filter(|(k, _)| *k == key) {
-            Some((_, Outcome::Ready(path))) => format!("ready: {}", path.display()),
+            Some((_, Outcome::Ready(clip))) => match clip.end {
+                Some(end) => format!(
+                    "ready: {} ({}-{} s)",
+                    clip.path.display(),
+                    clip.start.as_secs(),
+                    end.as_secs()
+                ),
+                None => format!("ready: {}", clip.path.display()),
+            },
             Some((_, Outcome::NotFound)) => "no matching clip".into(),
             Some((_, Outcome::BackingOff { until })) => {
                 let mins = until

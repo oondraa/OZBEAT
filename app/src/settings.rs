@@ -18,6 +18,31 @@ pub enum AudioMode {
     Off,
 }
 
+/// How timed lyrics are shown.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LyricsStyle {
+    /// One word at a time, stacking up as each is sung.
+    #[default]
+    Words,
+    /// Whole lines scrolling by, lit word by word.
+    Lines,
+}
+
+/// Where the music video plays once Ctrl+D (or the screensaver) puts the
+/// lyrics on a second screen. With one screen it plays in the main window.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ClipScreen {
+    /// Under the lyrics; the main window shows the cover big instead.
+    #[default]
+    Lyrics,
+    /// In the main window; the lyrics screen has only the lyrics.
+    Main,
+    /// On every screen.
+    Both,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -29,7 +54,10 @@ pub struct Settings {
     pub audio: AudioMode,
     /// 0..1; 0.5 is the default amount of beat-driven motion.
     pub intensity: f32,
+    pub lyrics: LyricsStyle,
+    /// Download music videos from YouTube and play them with the song.
     pub youtube: bool,
+    pub clip_screen: ClipScreen,
     /// IP address or host name of a WLED light to drive; empty = off.
     pub wled: String,
 }
@@ -41,7 +69,9 @@ impl Default for Settings {
             disabled_sources: BTreeSet::new(),
             audio: AudioMode::Auto,
             intensity: 0.5,
+            lyrics: LyricsStyle::Words,
             youtube: false,
+            clip_screen: ClipScreen::Lyrics,
             wled: String::new(),
         }
     }

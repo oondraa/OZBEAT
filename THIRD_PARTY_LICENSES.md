@@ -292,3 +292,12 @@ OZBEAT is built on the following open-source Rust crates. Each remains under its
 | zmij | 1.0.23 | MIT | https://github.com/dtolnay/zmij |
 | zune-core | 0.5.3 | MIT OR Apache-2.0 OR Zlib | https://github.com/etemesi254/zune-image |
 | zune-jpeg | 0.5.15 | MIT OR Apache-2.0 OR Zlib | https://github.com/etemesi254/zune-image/tree/dev/crates/zune-jpeg |
+
+## Fonts
+
+Bundled in the app (`app/assets/fonts`):
+
+| Font | License | Source |
+|---|---|---|
+| Geist (Regular, SemiBold, Bold) | SIL Open Font License 1.1 | https://github.com/vercel/geist-font |
+| Phosphor Icons, fill weight (subset: the lyric icons only) | MIT | https://github.com/phosphor-icons/homepage |

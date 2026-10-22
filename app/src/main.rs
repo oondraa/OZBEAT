@@ -6,8 +6,10 @@ mod art;
 mod background;
 mod beam;
 mod cache;
+mod clip;
 mod control;
 mod frameless;
+mod icons;
 mod pipeline;
 mod settings;
 mod setup;
@@ -33,7 +35,7 @@ OPTIONS:
     --bluos <HOST>   Poll a BluOS player at HOST (repeatable)
     --no-discover    Do not look for BluOS players via mDNS
     --no-smtc        Do not read Windows media sessions
-    --youtube        Fetch background clips via yt-dlp (off by default)
+    --youtube        Play music videos from YouTube (off by default)
     --audio <MODE>   auto | loopback | mic | off (default: auto = loopback
                      for music played by this computer, mic for speakers)
     -h, --help       Print this help

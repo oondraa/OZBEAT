@@ -56,7 +56,7 @@ Run `OZBEAT.exe` once before you use the screensaver, so your settings are ready
 | Key | What it does |
 |---|---|
 | `F11` or double-click | Fullscreen on / off |
-| `Ctrl+D` | Use a second screen: cover here, lyrics there |
+| `Ctrl+D` | Use a second screen: cover big here, lyrics there over the music video (click it to swap which is big) |
 | `Ctrl+S` | Settings |
 | `Ctrl+↑` / `Ctrl+↓` | Louder / quieter (BluOS speaker, or Windows volume for apps on this PC) |
 | `Ctrl+Space` | Pause / play |
@@ -81,7 +81,7 @@ OZBEAT.exe [OPTIONS]
 --bluos <HOST>   Connect to a BluOS player at HOST (repeatable)
 --no-discover    Don't search the network for BluOS players
 --no-smtc        Don't read Windows media sessions
---youtube        Fetch background clips via your own yt-dlp (off by default)
+--youtube        Play music videos from YouTube (off by default, also in the settings)
 --audio <MODE>   auto | loopback | mic | off
 ```
 

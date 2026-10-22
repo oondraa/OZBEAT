@@ -121,8 +121,13 @@ fn to_lyrics(record: Record, duration: Option<Duration>) -> Option<Lyrics> {
     let plain = record.plain_lyrics.filter(|p| !p.trim().is_empty());
     let listed = record.duration.filter(|d| d.is_finite() && *d > 0.0);
     let song = duration.or(listed.map(Duration::from_secs_f64));
-    if let (true, Some(plain), Some(song)) = (synced.is_empty(), &plain, song) {
+    let estimated = synced.is_empty();
+    if let (true, Some(plain), Some(song)) = (estimated, &plain, song) {
         synced = lrc::estimate(plain, song);
     }
-    (!synced.is_empty() || plain.is_some()).then_some(Lyrics { synced, plain })
+    (!synced.is_empty() || plain.is_some()).then_some(Lyrics {
+        synced,
+        plain,
+        estimated,
+    })
 }
