@@ -39,7 +39,7 @@
       "name": "Ondřej Zajíček",
       "alternateName": ["oondraa", "Ondra Zajíček"],
       "url": "https://oondraa.pages.dev/",
-      "sameAs": ["https://github.com/oondraa", "https://oondraa.pages.dev/"]
+      "sameAs": ["https://github.com/oondraa", "https://oondraa.pages.dev/", "https://ko-fi.com/oondraa"]
     },
     {
       "@type": "Organization",
@@ -148,6 +148,7 @@
     --glass-hover: rgba(255, 255, 255, 0.14);
     --brand: #2d8cff;
     --amber: #e8b04a;
+    --kofi: #ff5e5b;
     --ink: #121216;
     --radius: 28px;
     --ease: cubic-bezier(0.16, 1, 0.3, 1);
@@ -229,6 +230,31 @@
   }
   .btn-ghost:hover { background: var(--glass-hover); border-color: rgba(255, 255, 255, 0.3); }
   .meta { margin-top: 16px; font-size: 14px; color: var(--faint); }
+  /* Ko-fi: a glass pill like the others, warmed up with Ko-fi's coral so it stands out next to the download. */
+  .btn-kofi {
+    background: color-mix(in srgb, var(--kofi) 22%, rgba(255, 255, 255, 0.06)); color: var(--text);
+    border-color: color-mix(in srgb, var(--kofi) 55%, transparent);
+    -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  }
+  .btn-kofi .ph { color: var(--kofi); }
+  .btn-kofi:hover { background: color-mix(in srgb, var(--kofi) 34%, rgba(255, 255, 255, 0.06)); box-shadow: 0 8px 36px -8px color-mix(in srgb, var(--kofi) 70%, transparent); }
+
+  /* Shown once a download starts: a thank-you with the Ko-fi link, until closed. */
+  .thanks {
+    position: fixed; z-index: 10; left: 50%; bottom: 24px; width: min(560px, calc(100% - 32px));
+    display: flex; align-items: center; gap: 16px; padding: 16px 16px 16px 22px; border-radius: 24px;
+    background: rgba(24, 20, 22, 0.72); border: 1px solid var(--line);
+    box-shadow: 0 24px 70px -16px rgba(0, 0, 0, 0.7);
+    -webkit-backdrop-filter: blur(24px) saturate(140%); backdrop-filter: blur(24px) saturate(140%);
+    transform: translate(-50%, 140%); opacity: 0; pointer-events: none;
+    transition: transform 0.6s var(--ease), opacity 0.4s var(--ease);
+  }
+  .thanks.is-open { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
+  .thanks p { margin: 0; flex: 1; font-size: 15px; line-height: 1.45; color: var(--muted); }
+  .thanks p b { display: block; color: var(--text); font-size: 16px; }
+  .thanks .btn { height: 42px; padding: 0 18px; font-size: 15px; }
+  .thanks .close { flex-shrink: 0; width: 34px; height: 34px; border: 0; border-radius: 999px; background: none; color: var(--faint); cursor: pointer; font-size: 18px; display: grid; place-items: center; }
+  .thanks .close:hover { color: var(--text); background: var(--glass); }
 
   /* Card deck: three real screenshots fanned out. The front card changes slowly on its own or on click. */
   .deck { position: relative; aspect-ratio: 16 / 11; }
@@ -365,6 +391,8 @@
     .picks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .watch, .duo { padding-top: 64px; }
     .note { margin-bottom: 64px; }
+    .thanks { flex-wrap: wrap; bottom: 16px; }
+    .thanks p { flex-basis: calc(100% - 50px); }
   }
 </style>
 </head>
@@ -379,6 +407,7 @@
         <p class="rise" style="--i:2" data-i18n="heroSub">OZBEAT shows what your PC or BluOS speakers are playing, with artwork, synced lyrics and visuals that move with the music.</p>
         <div class="ctas rise" style="--i:3">
           <a class="btn btn-primary" href="https://github.com/oondraa/OZBEAT/releases/latest/download/OZBEAT.exe"><i class="ph ph-download-simple" aria-hidden="true"></i><span data-i18n="cta">Download for Windows</span></a>
+          <a class="btn btn-kofi" href="https://ko-fi.com/oondraa" target="_blank" rel="noopener"><i class="ph ph-coffee" aria-hidden="true"></i><span data-i18n="kofi">Support on Ko-fi</span></a>
           <a class="btn btn-ghost" href="#screensaver"><i class="ph ph-monitor" aria-hidden="true"></i><span data-i18n="ctaScr">Screensaver</span></a>
         </div>
         <div class="meta rise" style="--i:3" data-i18n="meta">Windows 10 and 11, 64-bit. Nothing to install. Free for personal use.</div>
@@ -430,6 +459,7 @@
           <h2 data-i18n="scrT">Also a screensaver</h2>
           <p data-i18n="scr">The same picture when your PC is idle, on all your monitors. Move the mouse or press a key to close it.</p>
           <a class="btn btn-primary" href="https://github.com/oondraa/OZBEAT/releases/latest/download/OZBEAT.scr"><i class="ph ph-download-simple" aria-hidden="true"></i><span data-i18n="ctaScrDl">Download OZBEAT.scr</span></a>
+          <a class="btn btn-kofi" href="https://ko-fi.com/oondraa" target="_blank" rel="noopener"><i class="ph ph-coffee" aria-hidden="true"></i><span data-i18n="kofi">Support on Ko-fi</span></a>
         </div>
         <ol>
           <li><div><b data-i18n="st1T">Download OZBEAT.scr.</b> <span data-i18n="st1">Run OZBEAT.exe once before, so your settings are ready.</span></div></li>
@@ -459,11 +489,18 @@
         <a href="https://github.com/oondraa/OZBEAT">GitHub</a>
         <a href="https://github.com/oondraa/OZBEAT/releases" data-i18n="releases">Releases</a>
         <a href="https://github.com/oondraa/OZBEAT/blob/main/LICENSE" data-i18n="license">License</a>
+        <a href="https://ko-fi.com/oondraa" target="_blank" rel="noopener">Ko-fi</a>
         <a href="https://oondraa.pages.dev/">OZDIGITAL</a>
         <button id="lang-toggle" type="button">Česky</button>
       </nav>
     </div>
   </footer>
+
+  <div class="thanks" id="thanks" role="status" aria-live="polite">
+    <p><b data-i18n="thxT">Your download has started.</b><span data-i18n="thx">OZBEAT is free. If you like it, you can buy me a coffee.</span></p>
+    <a class="btn btn-kofi" href="https://ko-fi.com/oondraa" target="_blank" rel="noopener"><i class="ph ph-coffee" aria-hidden="true"></i><span>Ko-fi</span></a>
+    <button class="close" id="thanks-close" type="button" aria-label="Close"><i class="ph ph-x" aria-hidden="true"></i></button>
+  </div>
 
 <script>
 (function () {
@@ -472,6 +509,8 @@
     heroSub: "OZBEAT ukazuje, co hraje váš počítač nebo reproduktory BluOS. S obalem alba, synchronizovanými texty a vizuály, které se hýbou s hudbou.",
     cta: "Stáhnout pro Windows",
     ctaScr: "Spořič obrazovky", ctaScrDl: "Stáhnout OZBEAT.scr",
+    kofi: "Podpořit na Ko-fi",
+    thxT: "Stahování začalo.", thx: "OZBEAT je zdarma. Jestli se vám líbí, můžete mi koupit kafe.",
     scrT: "Je to i spořič obrazovky", scr: "Stejný obraz, když počítač nic nedělá, na všech monitorech. Pohněte myší nebo stiskněte klávesu a zavře se.",
     st1T: "Stáhněte OZBEAT.scr.", st1: "Předtím jednou spusťte OZBEAT.exe, ať máte hotové nastavení.",
     st2T: "Klikněte na něj pravým tlačítkem a zvolte Instalovat.", st2: "Otevře se nastavení spořiče ve Windows.",
@@ -594,6 +633,13 @@
       if (es[0].isIntersecting && !reduce) { var pr = v.play(); if (pr) pr.catch(function () {}); } else v.pause();
     }, { threshold: 0.3 }).observe(v);
   });
+  // After a download starts, thank and point to Ko-fi.
+  var thanks = document.getElementById("thanks");
+  document.querySelectorAll('a[href*="/releases/latest/download/"]').forEach(function (a) {
+    a.addEventListener("click", function () { setTimeout(function () { thanks.classList.add("is-open"); }, 600); });
+  });
+  document.getElementById("thanks-close").addEventListener("click", function () { thanks.classList.remove("is-open"); });
+
   btn.addEventListener("click", function () { setLang(document.documentElement.lang === "cs" ? "en" : "cs"); });
 })();
 </script>
