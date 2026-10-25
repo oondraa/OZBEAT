@@ -6,6 +6,7 @@ mod art;
 mod background;
 mod beam;
 mod cache;
+mod card;
 mod clip;
 mod control;
 mod frameless;
@@ -51,6 +52,7 @@ KEYS:
     Ctrl+S               settings
     Ctrl+D               mirror the visuals on the next screen
     Ctrl+L               next lyrics style (words, drum, lens)
+    Ctrl+K               share card of the line being sung (Pictures\\OZBEAT, clipboard)
     Ctrl+Alt+T           lyrics alone over the desktop, from anywhere
     F11 / double-click   toggle fullscreen
     Esc                  leave fullscreen / close settings

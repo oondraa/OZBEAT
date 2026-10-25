@@ -20,6 +20,7 @@ use crate::anim::{Tween, ease_in_out_cubic, ease_out_cubic, remap, spring};
 use crate::art::{Art, DEFAULT_PALETTE, Picture};
 use crate::background::{self, Background, Uniforms};
 use crate::beam;
+use crate::card;
 use crate::clip::ClipPlayer;
 use crate::pipeline::SharedScene;
 use crate::settings::{ClipScreen, LyricsStyle, SharedSettings};
@@ -65,7 +66,7 @@ const DOUBLE_CLICK: Duration = Duration::from_millis(400);
 pub(crate) const BOLD: &str = "bold";
 pub(crate) const REGULAR: &str = "regular";
 /// The lyric words, one at a time: heavier, falling back to [`BOLD`].
-const HEAVY: &str = "heavy";
+pub(crate) const HEAVY: &str = "heavy";
 const HEAVY_FONT: &[u8] = include_bytes!("../assets/fonts/Geist-Bold.ttf");
 /// Geist, the website's typeface, bundled so the app looks the same everywhere.
 const BUNDLED_FONTS: [(&str, &[u8]); 2] = [
@@ -224,6 +225,8 @@ pub struct VisualApp {
     overlay_ready: bool,
     /// Where the window was before the overlay, to put it back.
     overlay_rect: Option<(Pos2, Vec2)>,
+    /// The share card being drawn (Ctrl+K).
+    card: Option<std::sync::mpsc::Receiver<card::Made>>,
 }
 
 /// The windows that take keys and clicks.
@@ -368,6 +371,7 @@ impl VisualApp {
             overlay: None,
             overlay_ready: false,
             overlay_rect: None,
+            card: None,
         }
     }
 
@@ -458,6 +462,7 @@ impl eframe::App for VisualApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.toggle_overlay_on_key();
+        self.finish_card();
         let overlay = self.mode == Mode::Window && self.settings.lock().unwrap().overlay;
         self.set_overlay(&ctx, overlay);
         if overlay {
@@ -882,9 +887,13 @@ impl VisualApp {
                 let center = egui::emath::lerp(0.40..=0.5, settle);
                 let layout = Layout::new(rect, center, settle);
                 let focus = ease_in_out_cubic(focus);
-                if focus < 1.0 && video < 1.0 {
+                // Big lyrics hide the cover only while there is something to
+                // sing: a song without lyrics, its intro or a long break
+                // brings the cover back, big in the middle.
+                let hidden = focus * ready;
+                if hidden < 1.0 && video < 1.0 {
                     ui.scope(|ui| {
-                        ui.multiply_opacity((1.0 - focus) * (1.0 - video));
+                        ui.multiply_opacity((1.0 - hidden) * (1.0 - video));
                         self.draw_cover(ui, &layout, f.pulse);
                         // A new song's titles rise in as the last one's rise away.
                         let rise = layout.title_size * 0.5;
@@ -903,17 +912,10 @@ impl VisualApp {
                         });
                     });
                 }
-                if video > 0.0 && focus < 1.0 {
+                if video > 0.0 && hidden < 1.0 {
                     let mut painter = painter.clone();
-                    painter.multiply_opacity(video * (1.0 - focus));
+                    painter.multiply_opacity(video * (1.0 - hidden));
                     draw_clip_caption(&painter, rect, np);
-                }
-                // Big lyrics stay big across songs; until the new song's
-                // lyrics are in, show what plays in their place.
-                if !gone && focus > 0.0 && ready < 1.0 {
-                    let mut painter = painter.clone();
-                    painter.multiply_opacity(focus * (1.0 - ready));
-                    draw_caption(&painter, rect, np);
                 }
                 if let (false, Some((lyrics, at, line, alpha))) = (gone, outgoing) {
                     let (center_y, size) = lyrics_placement(rect, focus);
@@ -1036,17 +1038,21 @@ impl VisualApp {
     }
 
     /// The keys that work the same in every window: Ctrl+S opens the settings
-    /// there, Ctrl+D, Ctrl+L and the playback keys. Returns whether Esc was
+    /// there, Ctrl+D, Ctrl+L, Ctrl+K and the playback keys. Returns whether Esc was
     /// pressed, which each window handles its own way.
     fn handle_shortcuts(&mut self, ctx: &egui::Context, screen: Screen) -> bool {
-        let (settings_key, mirror_key, style_key, escape) = ctx.input(|i| {
+        let (settings_key, mirror_key, style_key, card_key, escape) = ctx.input(|i| {
             (
                 i.modifiers.command && i.key_pressed(egui::Key::S),
                 i.modifiers.command && i.key_pressed(egui::Key::D),
                 i.modifiers.command && i.key_pressed(egui::Key::L),
+                i.modifiers.command && i.key_pressed(egui::Key::K),
                 i.key_pressed(egui::Key::Escape),
             )
         });
+        if card_key {
+            self.share_card();
+        }
         if style_key {
             let style = {
                 let mut s = self.settings.lock().unwrap();
@@ -1110,6 +1116,10 @@ impl VisualApp {
 
     /// Pauses or turns what plays louder or quieter, from a key or a button.
     fn playback(&mut self, press: Press) {
+        if press == Press::Share {
+            self.share_card();
+            return;
+        }
         let (source, now_playing) = {
             let scene = self.scene.lock().unwrap();
             (scene.source.clone(), scene.now_playing.clone())
@@ -1117,6 +1127,7 @@ impl VisualApp {
         let done = match press {
             Press::PlayPause => self.control.play_pause(source.as_ref()),
             Press::Next | Press::Previous => self.control.skip(source.as_ref(), press == Press::Next),
+            Press::Share => true,
             Press::Louder | Press::Quieter => self.control.step_volume(
                 source.as_ref(),
                 now_playing.as_ref(),
@@ -1574,6 +1585,59 @@ impl VisualApp {
             self.show_toast(&format!(
                 "Je tu nová verze {version} · aktualizuješ v nastavení (Ctrl+S)"
             ));
+        }
+    }
+
+    /// Starts drawing the share card of the song playing, with the line
+    /// being sung now.
+    fn share_card(&mut self) {
+        if self.card.is_some() {
+            return;
+        }
+        let (now_playing, enrichment, art) = {
+            let scene = self.scene.lock().unwrap();
+            (scene.now_playing.clone(), scene.enrichment.clone(), scene.art.clone())
+        };
+        let Some(np) = now_playing.filter(|np| np.state != PlaybackState::Stopped) else {
+            self.show_toast("Nic nehraje");
+            return;
+        };
+        // The line being sung, or the last one with words in a short pause.
+        let line = enrichment
+            .as_ref()
+            .and_then(|e| e.lyrics.as_ref())
+            .zip(np.position_now(SystemTime::now()))
+            .filter(|(lyrics, at)| lyrics.sung_near(*at))
+            .and_then(|(lyrics, at)| {
+                let now = lyrics.line_at(at)?;
+                lyrics.synced[..=now]
+                    .iter()
+                    .rev()
+                    .map(|l| l.text.trim())
+                    .find(|text| !text.is_empty())
+                    .map(str::to_owned)
+            });
+        self.card = Some(card::spawn(card::Card {
+            title: np.track.title.clone(),
+            artist: np.track.artist.clone(),
+            line,
+            cover: art.as_ref().and_then(|a| a.cover.clone()),
+            backdrop: art.as_ref().and_then(|a| a.backdrop.clone()),
+            palette: art.as_ref().map_or(DEFAULT_PALETTE, |a| a.palette),
+        }));
+        self.show_toast("Kreslím kartu…");
+    }
+
+    /// Tells where the share card went, once it is done.
+    fn finish_card(&mut self) {
+        let Some(made) = self.card.as_ref().and_then(|rx| rx.try_recv().ok()) else {
+            return;
+        };
+        self.card = None;
+        match made {
+            Ok((_, true)) => self.show_toast("Karta je ve schránce (vlož ji Ctrl+V) a v Obrázky › OZBEAT"),
+            Ok((_, false)) => self.show_toast("Karta je uložená v Obrázky › OZBEAT"),
+            Err(e) => self.show_toast(&format!("Kartu se nepovedlo uložit: {e}")),
         }
     }
 
@@ -2866,7 +2930,7 @@ fn is_modifier(key: egui::Key) -> bool {
     )
 }
 
-fn install_fonts(ctx: &egui::Context) {
+pub(crate) fn install_fonts(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::default();
     let fallback = fonts
         .families
@@ -2970,7 +3034,7 @@ fn rgba(c: [f32; 3]) -> [f32; 4] {
     [c[0], c[1], c[2], 1.0]
 }
 
-fn color(c: [f32; 3]) -> Color32 {
+pub(crate) fn color(c: [f32; 3]) -> Color32 {
     let [r, g, b] = c.map(|v| (v.clamp(0.0, 1.0) * 255.0) as u8);
     Color32::from_rgb(r, g, b)
 }
@@ -2978,6 +3042,7 @@ fn color(c: [f32; 3]) -> Color32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::card::{Atlas, rasterize};
     use mv_enrich::{LyricLine, Lyrics};
 
     /// Draws the word stack a few moments into a line, rasterized on the CPU
@@ -3212,86 +3277,5 @@ mod tests {
             }
         }
         image.save(dir.join("settings.png")).unwrap();
-    }
-
-    /// The textures egui has sent, by id: the font atlas, images.
-    #[derive(Default)]
-    struct Atlas(std::collections::HashMap<egui::TextureId, ColorImageBuf>);
-
-    impl Atlas {
-        fn apply(&mut self, id: egui::TextureId, delta: &egui::epaint::ImageDelta) {
-            self.0.entry(id).or_default().apply(delta);
-        }
-    }
-
-    #[derive(Default)]
-    struct ColorImageBuf {
-        size: [usize; 2],
-        pixels: Vec<Color32>,
-    }
-
-    impl ColorImageBuf {
-        fn apply(&mut self, delta: &egui::epaint::ImageDelta) {
-            let egui::ImageData::Color(image) = &delta.image;
-            let [x0, y0] = delta.pos.unwrap_or([0, 0]);
-            if delta.pos.is_none() {
-                self.size = image.size;
-                self.pixels = vec![Color32::TRANSPARENT; image.size[0] * image.size[1]];
-            }
-            for y in 0..image.size[1] {
-                for x in 0..image.size[0] {
-                    self.pixels[(y0 + y) * self.size[0] + x0 + x] = image.pixels[y * image.size[0] + x];
-                }
-            }
-        }
-
-        fn sample(&self, uv: Pos2) -> [f32; 4] {
-            let x = ((uv.x * self.size[0] as f32) as usize).min(self.size[0] - 1);
-            let y = ((uv.y * self.size[1] as f32) as usize).min(self.size[1] - 1);
-            self.pixels[y * self.size[0] + x].to_array().map(|c| c as f32 / 255.0)
-        }
-    }
-
-    /// Premultiplied triangles over `image`, without antialiasing beyond egui's own feathering.
-    fn rasterize(image: &mut image::RgbaImage, mesh: &Mesh, atlas: &Atlas) {
-        let Some(atlas) = atlas.0.get(&mesh.texture_id) else {
-            return;
-        };
-        for t in mesh.indices.chunks_exact(3) {
-            let v = [0, 1, 2].map(|k| mesh.vertices[t[k] as usize]);
-            let (a, b, c) = (v[0].pos, v[1].pos, v[2].pos);
-            let area = (b - a).x * (c - a).y - (b - a).y * (c - a).x;
-            if area.abs() < 1e-6 {
-                continue;
-            }
-            let min = a.min(b).min(c);
-            let max = a.max(b).max(c);
-            let x_range = (min.x.floor().max(0.0) as u32)..(max.x.ceil().min(image.width() as f32) as u32);
-            for y in (min.y.floor().max(0.0) as u32)..(max.y.ceil().min(image.height() as f32) as u32) {
-                for x in x_range.clone() {
-                    let p = Pos2::new(x as f32 + 0.5, y as f32 + 0.5);
-                    let w0 = ((b - p).x * (c - p).y - (b - p).y * (c - p).x) / area;
-                    let w1 = ((c - p).x * (a - p).y - (c - p).y * (a - p).x) / area;
-                    let w2 = 1.0 - w0 - w1;
-                    if w0 < 0.0 || w1 < 0.0 || w2 < 0.0 {
-                        continue;
-                    }
-                    let uv = Pos2::new(
-                        w0 * v[0].uv.x + w1 * v[1].uv.x + w2 * v[2].uv.x,
-                        w0 * v[0].uv.y + w1 * v[1].uv.y + w2 * v[2].uv.y,
-                    );
-                    let tex = atlas.sample(uv);
-                    let colors = v.map(|v| v.color.to_array().map(|c| c as f32 / 255.0));
-                    let src: [f32; 4] = std::array::from_fn(|k| {
-                        (w0 * colors[0][k] + w1 * colors[1][k] + w2 * colors[2][k]) * tex[k]
-                    });
-                    let dst = image.get_pixel_mut(x, y);
-                    for k in 0..4 {
-                        let d = dst.0[k] as f32 / 255.0;
-                        dst.0[k] = ((src[k] + d * (1.0 - src[3])) * 255.0).round().clamp(0.0, 255.0) as u8;
-                    }
-                }
-            }
-        }
     }
 }

@@ -378,6 +378,7 @@ fn footer(ui: &mut egui::Ui) {
             ("Ctrl+S", "nastavení"),
             ("Ctrl+D", "druhá obrazovka"),
             ("Ctrl+L", "styl textů"),
+            ("Ctrl+K", "sdílet kartu"),
             ("F11", "celá obrazovka"),
         ] {
             egui::Frame::new()

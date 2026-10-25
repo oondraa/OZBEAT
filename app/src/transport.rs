@@ -1,4 +1,5 @@
-//! Buttons for what plays: back, quieter, pause / resume, louder and next, on a glass
+//! Buttons for what plays: back, quieter, pause / resume, louder and next, and
+//! one to share the line being sung, on a glass
 //! pill in the bottom right corner, clear of the lyrics in the middle. Like
 //! the title bar they come up when the mouse moves and go once it rests, so
 //! the picture keeps the whole window the rest of the time.
@@ -24,9 +25,18 @@ pub enum Press {
     PlayPause,
     Louder,
     Next,
+    /// The share card of the line being sung.
+    Share,
 }
 
-const BUTTONS: [Press; 5] = [Press::Previous, Press::Quieter, Press::PlayPause, Press::Louder, Press::Next];
+const BUTTONS: [Press; 6] = [
+    Press::Previous,
+    Press::Quieter,
+    Press::PlayPause,
+    Press::Louder,
+    Press::Next,
+    Press::Share,
+];
 
 pub struct Transport {
     last_activity: Instant,
@@ -154,6 +164,7 @@ impl Transport {
                 Press::Louder => speaker(&painter, center, icon, 3),
                 Press::PlayPause if paused => play(&painter, center, icon),
                 Press::PlayPause => pause(&painter, center, icon),
+                Press::Share => share(&painter, center, icon),
             }
             if self.alpha > 0.5 && click.is_some_and(|p| rect.contains(p)) {
                 self.pressed = Some((press, Instant::now()));
@@ -220,4 +231,13 @@ fn pause(painter: &Painter, at: Pos2, s: f32) {
         let bar = Rect::from_center_size(at + Vec2::new(x * s, 0.0), Vec2::new(4.0, 16.0) * s);
         painter.rect_filled(bar, 2.0 * s, Color32::WHITE);
     }
+}
+
+/// An arrow rising out of an open box.
+fn share(painter: &Painter, at: Pos2, s: f32) {
+    let stroke = Stroke::new(2.0 * s, Color32::from_white_alpha(235));
+    let p = |x: f32, y: f32| at + Vec2::new(x, y) * s;
+    painter.line(vec![p(-4.0, -1.0), p(-7.0, -1.0), p(-7.0, 9.0), p(7.0, 9.0), p(7.0, -1.0), p(4.0, -1.0)], stroke);
+    painter.line_segment([p(0.0, 4.0), p(0.0, -9.0)], stroke);
+    painter.line(vec![p(-4.0, -5.0), p(0.0, -9.0), p(4.0, -5.0)], stroke);
 }
