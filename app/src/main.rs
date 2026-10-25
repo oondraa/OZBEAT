@@ -9,6 +9,7 @@ mod cache;
 mod clip;
 mod control;
 mod frameless;
+mod hotkey;
 mod icons;
 mod pipeline;
 mod settings;
@@ -50,6 +51,7 @@ KEYS:
     Ctrl+S               settings
     Ctrl+D               mirror the visuals on the next screen
     Ctrl+L               next lyrics style (words, drum, lens)
+    Ctrl+Alt+T           lyrics alone over the desktop, from anywhere
     F11 / double-click   toggle fullscreen
     Esc                  leave fullscreen / close settings
 
@@ -177,7 +179,10 @@ fn main() -> ExitCode {
         .with_inner_size([1280.0, 720.0])
         .with_min_inner_size([640.0, 360.0])
         // The title bar is our own (titlebar.rs), fading out over the visuals.
-        .with_decorations(false);
+        .with_decorations(false)
+        // eframe makes see-through windows only when the main one is; it
+        // stays opaque, the background covers all of it.
+        .with_transparent(true);
     if mode == Mode::Screensaver {
         let displays = display_info::DisplayInfo::all().unwrap_or_default();
         if let Some(primary) = primary_monitor(&displays) {
@@ -193,6 +198,7 @@ fn main() -> ExitCode {
     }
     let options = eframe::NativeOptions {
         viewport,
+        wgpu_options: wgpu_options(),
         ..Default::default()
     };
     let result = eframe::run_native(
@@ -206,6 +212,25 @@ fn main() -> ExitCode {
             eprintln!("window error: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// DirectX 12 through DirectComposition, the one way to a see-through
+/// window on Windows: the lyrics over the desktop need it. OpenGL stays as
+/// the fallback for machines without DirectX 12.
+fn wgpu_options() -> eframe::egui_wgpu::WgpuConfiguration {
+    use eframe::egui_wgpu::{WgpuSetupCreateNew, wgpu};
+
+    let mut setup = WgpuSetupCreateNew::without_display_handle();
+    if cfg!(windows) {
+        let desc = &mut setup.instance_descriptor;
+        desc.backends = wgpu::Backends::from_env().unwrap_or(wgpu::Backends::DX12 | wgpu::Backends::GL);
+        desc.backend_options.dx12.presentation_system = wgpu::Dx12SwapchainKind::from_env()
+            .unwrap_or(wgpu::Dx12SwapchainKind::DxgiFromVisual);
+    }
+    eframe::egui_wgpu::WgpuConfiguration {
+        wgpu_setup: setup.into(),
+        ..Default::default()
     }
 }
 

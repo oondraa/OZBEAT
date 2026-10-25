@@ -61,6 +61,7 @@ Run `OZBEAT.exe` once before you use the screensaver, so your settings are ready
 | `Ctrl+↑` / `Ctrl+↓` | Louder / quieter (BluOS speaker, or Windows volume for apps on this PC) |
 | `Ctrl+Space` | Pause / play |
 | `Ctrl+←` / `Ctrl+→` | Previous / next song |
+| `Ctrl+Alt+T` | Lyrics alone over the desktop and every app, and back (works from anywhere) |
 | `Esc` | Leave fullscreen / close settings |
 
 ## Questions
@@ -141,6 +142,6 @@ Spořič zabere všechny monitory: na hlavním je obal a název, na druhém text
 
 **Aktualizace:** když vyjde nová verze, otevři nastavení (`Ctrl+S`) a klikni na **Aktualizovat a restartovat**. Funguje to od verze 0.1.3, starší verzi stáhni znovu.
 
-**Klávesy:** `F11` nebo dvojklik přepíná celou obrazovku. `Ctrl+D` zapne druhý monitor. `Ctrl+S` otevře nastavení. `Ctrl+↑`/`Ctrl+↓` zesílí/ztlumí (reproduktor BluOS, u aplikací v PC hlasitost Windows). `Ctrl+mezerník` pozastaví/pustí. `Ctrl+←`/`Ctrl+→` přeskočí na předchozí/další písničku. `Esc` celou obrazovku nebo nastavení zavře.
+**Klávesy:** `F11` nebo dvojklik přepíná celou obrazovku. `Ctrl+D` zapne druhý monitor. `Ctrl+S` otevře nastavení. `Ctrl+↑`/`Ctrl+↓` zesílí/ztlumí (reproduktor BluOS, u aplikací v PC hlasitost Windows). `Ctrl+mezerník` pozastaví/pustí. `Ctrl+←`/`Ctrl+→` přeskočí na předchozí/další písničku. `Ctrl+Alt+T` odkudkoliv přepne na samotné texty přes plochu a zpátky. `Esc` celou obrazovku nebo nastavení zavře.
 
 **Licence:** zdarma jen pro osobní, nekomerční použití. Komerční použití, další šíření a převzetí kódu nejsou povolené. Podrobnosti najdeš v [LICENSE](LICENSE).
