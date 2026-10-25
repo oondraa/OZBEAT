@@ -4,19 +4,22 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>OZBEAT | Music visualizer for Windows by oondraa</title>
-<meta name="description" content="OZBEAT is a free music visualizer for Windows by oondraa. It shows what is playing on Spotify, YouTube or BluOS speakers with cover art, synced lyrics and visuals that move with the music. OZBEAT is also a screensaver.">
+<meta name="description" content="OZBEAT is a free music visualizer for Windows by oondraa. It shows what is playing on Spotify, YouTube or BluOS speakers with cover art, lyrics word by word as they are sung, the music video and visuals that move with the music. OZBEAT is also a screensaver.">
 <meta name="keywords" content="OZBEAT, ozbeat, oondraa, OZBEAT oondraa, music visualizer, hudební vizualizér, Spotify visualizer, synced lyrics, texty písniček, Spotify lyrics, BluOS, Windows screensaver, spořič obrazovky, OZDIGITAL">
 <meta name="author" content="Ondřej Zajíček (oondraa)">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
 <meta name="google-site-verification" content="bVb7uDbiZeKTo60uHFWjh2av7620HBJBl7iYOHcBhhQ" />
 <link rel="canonical" href="https://oondraa.github.io/OZBEAT/">
+<link rel="alternate" hreflang="en" href="https://oondraa.github.io/OZBEAT/">
+<link rel="alternate" hreflang="cs" href="https://oondraa.github.io/OZBEAT/cs/">
+<link rel="alternate" hreflang="x-default" href="https://oondraa.github.io/OZBEAT/">
 <link rel="author" href="https://oondraa.pages.dev/">
 <link rel="sitemap" type="application/xml" href="sitemap.xml">
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="OZBEAT">
 <meta property="og:title" content="OZBEAT | Music visualizer for Windows by oondraa">
-<meta property="og:description" content="OZBEAT by oondraa: cover art, synced lyrics and visuals that move with the music. For Spotify, YouTube and BluOS speakers.">
+<meta property="og:description" content="OZBEAT by oondraa: cover art, lyrics word by word, music videos and visuals that move with the music. For Spotify, YouTube and BluOS speakers.">
 <meta property="og:url" content="https://oondraa.github.io/OZBEAT/">
 <meta property="og:image" content="https://oondraa.github.io/OZBEAT/assets/og-ozbeat.png">
 <meta property="og:image:width" content="1200">
@@ -63,7 +66,7 @@
       "@id": "https://oondraa.github.io/OZBEAT/#app",
       "name": "OZBEAT",
       "alternateName": "ozbeat",
-      "description": "OZBEAT is a free music visualizer for Windows made by oondraa (Ondřej Zajíček). It shows whatever is playing on the PC (Spotify, YouTube in the browser, any app in the Windows media controls) or on BluOS speakers, with the blurred cover art as a flowing background, lyrics synced line by line and visuals that react to the music. It works on two screens, as a Windows screensaver and with WLED lights.",
+      "description": "OZBEAT is a free music visualizer for Windows made by oondraa (Ondřej Zajíček). It shows whatever is playing on the PC (Spotify, YouTube in the browser, any app in the Windows media controls) or on BluOS speakers, with the blurred cover art as a flowing background, lyrics word by word as they are sung, the official music video and visuals that react to the music, with buttons to pause, skip and change the volume. It works on two screens, as a Windows screensaver and with WLED lights.",
       "url": "https://oondraa.github.io/OZBEAT/",
       "downloadUrl": "https://github.com/oondraa/OZBEAT/releases/latest/download/OZBEAT.exe",
       "applicationCategory": "MultimediaApplication",
@@ -85,13 +88,13 @@
         "https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-synced-lyrics-teal.webp",
         "https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-viktor-sheen-cigo-a-kava.webp"
       ],
-      "featureList": ["Synced lyrics", "Cover art background", "Spotify and YouTube", "BluOS speakers", "Two screens", "Windows screensaver", "WLED lights"]
+      "featureList": ["Word-by-word synced lyrics", "Music videos", "Cover art background", "Spotify and YouTube", "BluOS speakers", "Pause, skip and volume controls", "Two screens", "Windows screensaver", "WLED lights"]
     },
     {
       "@type": "FAQPage",
       "@id": "https://oondraa.github.io/OZBEAT/#faq",
       "mainEntity": [
-        { "@type": "Question", "name": "What is OZBEAT?", "acceptedAnswer": { "@type": "Answer", "text": "OZBEAT is a free music visualizer for Windows by oondraa. It fills the screen with whatever is playing: the cover art as a flowing background, lyrics synced line by line and visuals that move with the music." } },
+        { "@type": "Question", "name": "What is OZBEAT?", "acceptedAnswer": { "@type": "Answer", "text": "OZBEAT is a free music visualizer for Windows by oondraa. It fills the screen with whatever is playing: the cover art as a flowing background, lyrics word by word as they are sung and visuals that move with the music." } },
         { "@type": "Question", "name": "Who makes OZBEAT?", "acceptedAnswer": { "@type": "Answer", "text": "OZBEAT is made by Ondřej Zajíček, known as oondraa, under OZDIGITAL (oondraa.pages.dev)." } },
         { "@type": "Question", "name": "Does OZBEAT work with Spotify?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. OZBEAT works with Spotify, YouTube in the browser and any app in the Windows media controls, and also with BluOS network speakers." } },
         { "@type": "Question", "name": "Is OZBEAT free?", "acceptedAnswer": { "@type": "Answer", "text": "Yes, OZBEAT is free for personal use. Download OZBEAT.exe and run it, there is nothing to install." } }
@@ -110,9 +113,13 @@
 
 <script>
   (function () {
-    var l = null;
+    var ua = navigator.userAgent;
+    if (/Android|iPhone|iPad|iPod|Mobile/i.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(ua))) {
+      document.documentElement.classList.add("is-phone");
+    }
+    /*lang-redirect*/var l = null;
     try { l = localStorage.getItem("lang"); } catch (e) {}
-    if (l === "cs" || (!l && /^(cs|sk)/i.test(navigator.language || ""))) document.documentElement.lang = "cs";
+    if (l === "cs" || (!l && /^(cs|sk)/i.test(navigator.language || ""))) location.replace("cs/" + location.search + location.hash);/*end*/
   })();
 </script>
 
@@ -380,8 +387,17 @@
     :root { transition: none; }
     .card { transition: none; }
   }
+  /* A phone can't run OZBEAT: it gets a button to send the link to a PC instead of the downloads. */
+  .phone-only { display: none; }
+  .is-phone .phone-only { display: inline-flex; }
+  .is-phone .desk-only { display: none; }
+  .phone-note { margin-top: 14px; font-size: 14px; color: var(--muted); }
+  .is-phone .phone-note { display: block; }
   @media (max-width: 767px) {
     .wrap { padding: 0 16px; }
+    /* Straight from a video ad: show the app before the words. */
+    .hero .wrap { gap: 20px; }
+    .hero .deck { order: -1; margin-top: -8px; }
     .hero { padding: 48px 0 40px; }
     .hero p { font-size: 17px; }
     .wordmark { margin-bottom: 28px; }
@@ -406,11 +422,13 @@
         <h1 class="rise" style="--i:1"><span data-i18n="heroA">Your music,</span><em data-i18n="heroB">on the big screen.</em></h1>
         <p class="rise" style="--i:2" data-i18n="heroSub">OZBEAT shows what your PC or BluOS speakers are playing, with artwork, synced lyrics and visuals that move with the music.</p>
         <div class="ctas rise" style="--i:3">
-          <a class="btn btn-primary" href="https://github.com/oondraa/OZBEAT/releases/latest/download/OZBEAT.exe"><i class="ph ph-download-simple" aria-hidden="true"></i><span data-i18n="cta">Download for Windows</span></a>
+          <a class="btn btn-primary desk-only" href="https://github.com/oondraa/OZBEAT/releases/latest/download/OZBEAT.exe"><i class="ph ph-download-simple" aria-hidden="true"></i><span data-i18n="cta">Download for Windows</span></a>
+          <button class="btn btn-primary phone-only" id="share" type="button" data-copied="Link copied"><i class="ph ph-paper-plane-tilt" aria-hidden="true"></i><span id="share-label" data-i18n="share">Send the link to my PC</span></button>
           <a class="btn btn-kofi" href="https://ko-fi.com/oondraa" target="_blank" rel="noopener"><i class="ph ph-coffee" aria-hidden="true"></i><span data-i18n="kofi">Support on Ko-fi</span></a>
-          <a class="btn btn-ghost" href="#screensaver"><i class="ph ph-monitor" aria-hidden="true"></i><span data-i18n="ctaScr">Screensaver</span></a>
+          <a class="btn btn-ghost desk-only" href="#screensaver"><i class="ph ph-monitor" aria-hidden="true"></i><span data-i18n="ctaScr">Screensaver</span></a>
         </div>
         <div class="meta rise" style="--i:3" data-i18n="meta">Windows 10 and 11, 64-bit. Nothing to install. Free for personal use.</div>
+        <div class="phone-note phone-only" data-i18n="phone">OZBEAT runs on Windows PCs. Send yourself the link and download it there.</div>
         </div>
         <div class="deck is-stacked" id="deck" aria-label="Screenshots">
           <button class="card" type="button" data-pos="0" data-color="#4f8f93"><img src="assets/shots/ozbeat-viktor-sheen-cigo-a-kava.webp" width="1600" height="900" alt="OZBEAT music visualizer by oondraa playing Cígo a káva by Viktor Sheen: album cover, title and synced lyrics over the blurred artwork"></button>
@@ -424,8 +442,10 @@
       <div class="features">
         <div class="feature glass"><i class="ph ph-monitor-play" aria-hidden="true"></i><div><h2 data-i18n="f1T">Anything on your PC</h2><p data-i18n="f1">Spotify, your browser or any app in the Windows media controls.</p></div></div>
         <div class="feature glass"><i class="ph ph-speaker-hifi" aria-hidden="true"></i><div><h2 data-i18n="f2T">BluOS speakers</h2><p data-i18n="f2">Bluesound players on your network are found automatically.</p></div></div>
-        <div class="feature glass"><i class="ph ph-microphone-stage" aria-hidden="true"></i><div><h2 data-i18n="f3T">Lyrics where others have none</h2><p data-i18n="f3">Line by line, in time with the song. Even for many songs Spotify has no lyrics for.</p></div></div>
+        <div class="feature glass"><i class="ph ph-microphone-stage" aria-hidden="true"></i><div><h2 data-i18n="f3T">Lyrics where others have none</h2><p data-i18n="f3">Word by word, the moment each one is sung. Even for many songs Spotify has no lyrics for.</p></div></div>
         <div class="feature glass"><i class="ph ph-image" aria-hidden="true"></i><div><h2 data-i18n="f4T">Artwork background</h2><p data-i18n="f4">The blurred cover flows behind everything, in the song's own colors.</p></div></div>
+        <div class="feature glass"><i class="ph ph-film-strip" aria-hidden="true"></i><div><h2 data-i18n="f5T">Music videos</h2><p data-i18n="f5">The official video plays muted behind the lyrics, in time with the song.</p></div></div>
+        <div class="feature glass"><i class="ph ph-sliders-horizontal" aria-hidden="true"></i><div><h2 data-i18n="f6T">Control it from the screen</h2><p data-i18n="f6">Pause, skip and change the volume with buttons that show when you move the mouse.</p></div></div>
       </div>
       <section class="watch">
         <h2 data-i18n="watchT">See it play</h2>
@@ -459,7 +479,7 @@
           <h2 data-i18n="scrT">Also a screensaver</h2>
           <p data-i18n="scr">The same picture when your PC is idle, on all your monitors. Move the mouse or press a key to close it.</p>
           <div class="ctas" style="margin-top: 0;">
-            <a class="btn btn-primary" href="https://github.com/oondraa/OZBEAT/releases/latest/download/OZBEAT.scr"><i class="ph ph-download-simple" aria-hidden="true"></i><span data-i18n="ctaScrDl">Download OZBEAT.scr</span></a>
+            <a class="btn btn-primary desk-only" href="https://github.com/oondraa/OZBEAT/releases/latest/download/OZBEAT.scr"><i class="ph ph-download-simple" aria-hidden="true"></i><span data-i18n="ctaScrDl">Download OZBEAT.scr</span></a>
             <a class="btn btn-kofi" href="https://ko-fi.com/oondraa" target="_blank" rel="noopener"><i class="ph ph-coffee" aria-hidden="true"></i><span data-i18n="kofi">Support on Ko-fi</span></a>
           </div>
         </div>
@@ -471,7 +491,7 @@
       </section>
       <section class="about" id="about">
         <h2 data-i18n="aboutT">What is OZBEAT?</h2>
-        <p data-i18n="about1">OZBEAT is a free music visualizer for Windows, made by oondraa (Ondřej Zajíček). You play music the way you normally do, on Spotify, YouTube or BluOS speakers, and OZBEAT fills the screen with it: the album cover as a soft, flowing background, the lyrics synced line by line and visuals that move with the sound.</p>
+        <p data-i18n="about1">OZBEAT is a free music visualizer for Windows, made by oondraa (Ondřej Zajíček). You play music the way you normally do, on Spotify, YouTube or BluOS speakers, and OZBEAT fills the screen with it: the album cover as a soft, flowing background, the lyrics word by word as they are sung, the music video behind them and visuals that move with the sound.</p>
         <p data-i18n="about2">OZBEAT finds lyrics even for many songs Spotify has none for, and times them itself when they come without timing. It can put the cover on one screen and the lyrics on a TV, run as a Windows screensaver and light up WLED lights in the colors of the cover. OZBEAT is one file, nothing to install.</p>
         <dl class="faq">
           <div class="glass"><dt data-i18n="q1">Who makes OZBEAT?</dt><dd><span data-i18n="a1">Ondřej Zajíček, known as oondraa. More of his work is at</span> <a href="https://oondraa.pages.dev/" rel="author">oondraa.pages.dev</a>.</dd></div>
@@ -493,7 +513,7 @@
         <a href="https://github.com/oondraa/OZBEAT/blob/main/LICENSE" data-i18n="license">License</a>
         <a href="https://ko-fi.com/oondraa" target="_blank" rel="noopener">Ko-fi</a>
         <a href="https://oondraa.pages.dev/">OZDIGITAL</a>
-        <button id="lang-toggle" type="button">Česky</button>
+        <a id="lang-toggle" href="cs/" hreflang="cs" lang="cs" data-lang="cs">Česky</a>
       </nav>
     </div>
   </footer>
@@ -506,48 +526,6 @@
 
 <script>
 (function () {
-  var CS = {
-    heroA: "Vaše hudba", heroB: "na velké obrazovce.",
-    heroSub: "OZBEAT ukazuje, co hraje váš počítač nebo reproduktory BluOS. S obalem alba, synchronizovanými texty a vizuály, které se hýbou s hudbou.",
-    cta: "Stáhnout pro Windows",
-    ctaScr: "Spořič obrazovky", ctaScrDl: "Stáhnout OZBEAT.scr",
-    kofi: "Podpořit na Ko-fi",
-    thxT: "Stahování začalo.", thx: "OZBEAT je zdarma. Jestli se vám líbí, můžete mi koupit kafe.",
-    scrT: "Je to i spořič obrazovky", scr: "Stejný obraz, když počítač nic nedělá, na všech monitorech. Pohněte myší nebo stiskněte klávesu a zavře se.",
-    st1T: "Stáhněte OZBEAT.scr.", st1: "Předtím jednou spusťte OZBEAT.exe, ať máte hotové nastavení.",
-    st2T: "Klikněte na něj pravým tlačítkem a zvolte Instalovat.", st2: "Otevře se nastavení spořiče ve Windows.",
-    st3T: "Nastavte, za jak dlouho se má spustit, a dejte OK.", st3: "Malý náhled v tom okně zůstane černý. To je v pořádku.",
-    meta: "Windows 10 a 11, 64bit. Nic se neinstaluje. Zdarma pro osobní použití.",
-    f1T: "Cokoliv v počítači", f1: "Spotify, prohlížeč nebo jakákoliv aplikace v ovládání médií ve Windows.",
-    f2T: "Reproduktory BluOS", f2: "Přehrávače Bluesound ve vaší síti se najdou samy.",
-    f3T: "Texty i tam, kde jinde nejsou", f3: "Řádek po řádku, s písničkou. I u spousty písniček, ke kterým Spotify text nemá.",
-    f4T: "Pozadí z obalu", f4: "Rozmazaný obal alba plyne za vším ostatním, v barvách písničky.",
-    duoT: "Dvě obrazovky", duo: "Stiskněte Ctrl+D. Obal zůstane na monitoru a texty se zvětší na televizi nebo druhé obrazovce.",
-    scr1: "Hlavní obrazovka", scr2: "Druhá obrazovka",
-    watchT: "Podívejte se, jak to hraje", watch: "Skutečné záznamy z OZBEATu. Pozadí plyne v barvách obalu a text jde s písničkou.",
-    note: "Když Windows SmartScreen varuje, klikněte na Další informace a pak Přesto spustit. Aplikace zatím není digitálně podepsaná.",
-    aboutT: "Co je OZBEAT?",
-    about1: "OZBEAT je hudební vizualizér pro Windows zdarma, od oondraa (Ondřej Zajíček). Pouštíte si hudbu jako vždycky, na Spotify, YouTube nebo reproduktorech BluOS, a OZBEAT s ní zaplní obrazovku: obal alba jako měkké plynoucí pozadí, texty synchronizované řádek po řádku a vizuály, které se hýbou se zvukem.",
-    about2: "OZBEAT najde texty i u spousty písniček, ke kterým je Spotify nemá, a když přijdou bez časování, načasuje si je sám. Umí dát obal na jednu obrazovku a texty na televizi, běží jako spořič obrazovky ve Windows a rozsvítí světla WLED v barvách obalu. OZBEAT je jeden soubor, nic se neinstaluje.",
-    q1: "Kdo dělá OZBEAT?", a1: "Ondřej Zajíček, známý jako oondraa. Další jeho práce najdete na",
-    q2: "Funguje OZBEAT se Spotify?", a2: "Ano. Spotify, YouTube v prohlížeči, jakákoliv aplikace v ovládání médií ve Windows a síťové reproduktory BluOS.",
-    q3: "Je OZBEAT zdarma?", a3: "Ano, OZBEAT je zdarma pro osobní použití. Stáhněte OZBEAT.exe a spusťte ho.",
-    q4: "Jaké Windows OZBEAT potřebuje?", a4: "Windows 10 nebo 11, 64bit.",
-    pVidT: "Texty + video", pVid: "Videoklip za texty", pLyrT: "Jen texty", pLyr: "V barvách obalu",
-    releases: "Vydání", license: "Licence"
-  };
-  var nodes = document.querySelectorAll("[data-i18n]"), EN = {};
-  nodes.forEach(function (n) { EN[n.dataset.i18n] = n.textContent; });
-  var btn = document.getElementById("lang-toggle");
-  function setLang(l) {
-    var d = l === "cs" ? CS : EN;
-    nodes.forEach(function (n) { if (d[n.dataset.i18n]) n.textContent = d[n.dataset.i18n]; });
-    document.documentElement.lang = l;
-    btn.textContent = l === "cs" ? "English" : "Česky";
-    try { localStorage.setItem("lang", l); } catch (e) {}
-  }
-  if (document.documentElement.lang === "cs") setLang("cs");
-
   var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   // The background flows in the colors of whatever is on screen: the front card up top, the clip further down.
@@ -642,7 +620,22 @@
   });
   document.getElementById("thanks-close").addEventListener("click", function () { thanks.classList.remove("is-open"); });
 
-  btn.addEventListener("click", function () { setLang(document.documentElement.lang === "cs" ? "en" : "cs"); });
+  // Remember the language picked, so a Czech browser isn't sent back to the Czech page.
+  var langLink = document.getElementById("lang-toggle");
+  langLink.addEventListener("click", function () {
+    try { localStorage.setItem("lang", langLink.dataset.lang); } catch (e) {}
+  });
+
+  // Phones: share the page to a PC, or copy the link where sharing isn't there.
+  var share = document.getElementById("share"), shareLabel = document.getElementById("share-label");
+  share.addEventListener("click", function () {
+    var url = "https://oondraa.github.io/OZBEAT/";
+    if (navigator.share) {
+      navigator.share({ title: "OZBEAT", url: url }).catch(function () {});
+    } else if (navigator.clipboard) {
+      navigator.clipboard.writeText(url).then(function () { shareLabel.textContent = share.dataset.copied; });
+    }
+  });
 })();
 </script>
 </body>

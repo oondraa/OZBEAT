@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1" xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1" xmlns:video="http://www.google.com/schemas/sitemap-video/1.1" xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://oondraa.github.io/OZBEAT/</loc>
-    <lastmod>2026-10-23</lastmod>
+    <lastmod>2026-10-25</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://oondraa.github.io/OZBEAT/"/>
+    <xhtml:link rel="alternate" hreflang="cs" href="https://oondraa.github.io/OZBEAT/cs/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://oondraa.github.io/OZBEAT/"/>
     <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/og-ozbeat.png</image:loc></image:image>
     <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/icon-dark.png</image:loc></image:image>
     <image:image><image:loc>https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-calin-superstar-cover.webp</image:loc></image:image>
@@ -75,5 +78,12 @@
       <video:description>Real recording of OZBEAT by oondraa, the free music visualizer for Windows: synced lyrics in the cover's teal.</video:description>
       <video:content_loc>https://oondraa.github.io/OZBEAT/assets/video/ozbeat-synced-lyrics-teal.mp4</video:content_loc>
     </video:video>
+  </url>
+  <url>
+    <loc>https://oondraa.github.io/OZBEAT/cs/</loc>
+    <lastmod>2026-10-25</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://oondraa.github.io/OZBEAT/"/>
+    <xhtml:link rel="alternate" hreflang="cs" href="https://oondraa.github.io/OZBEAT/cs/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://oondraa.github.io/OZBEAT/"/>
   </url>
 </urlset>
