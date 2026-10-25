@@ -37,6 +37,25 @@ pub enum Status {
 
 pub type SharedUpdate = Arc<Mutex<Status>>;
 
+/// Whether this copy was installed as an MSIX package (Microsoft Store).
+/// The package folder is read-only and the Store updates it, so such a copy
+/// must not replace itself.
+#[cfg(windows)]
+pub fn packaged() -> bool {
+    use windows_sys::Win32::Foundation::APPMODEL_ERROR_NO_PACKAGE;
+    use windows_sys::Win32::Storage::Packaging::Appx::GetCurrentPackageFullName;
+
+    let mut len = 0u32;
+    // With no buffer this only reports whether there is a package name to copy.
+    let result = unsafe { GetCurrentPackageFullName(&mut len, std::ptr::null_mut()) };
+    result != APPMODEL_ERROR_NO_PACKAGE
+}
+
+#[cfg(not(windows))]
+pub fn packaged() -> bool {
+    false
+}
+
 /// Asks GitHub once, in the background; offline just means no offer.
 pub fn check_in_background(update: SharedUpdate) {
     spawn("update-check", async move {
