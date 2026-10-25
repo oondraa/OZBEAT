@@ -51,7 +51,7 @@ CS = {
     "q3": "Je OZBEAT zdarma?", "a3": "Ano, OZBEAT je zdarma pro osobní použití. Stáhněte OZBEAT.exe a spusťte ho.",
     "q4": "Jaké Windows OZBEAT potřebuje?", "a4": "Windows 10 nebo 11, 64bit.",
     "pVidT": "Texty + video", "pVid": "Videoklip za texty", "pLyrT": "Jen texty", "pLyr": "V barvách obalu",
-    "releases": "Vydání", "license": "Licence",
+    "releases": "Vydání", "license": "Licence", "privacy": "Soukromí",
 }
 
 
@@ -109,6 +109,7 @@ def main() -> None:
         page = page.replace(f'"{prefix}', f'"../{prefix}')
     page = page.replace('href="favicon.svg"', 'href="../favicon.svg"')
     page = page.replace('href="sitemap.xml"', 'href="../sitemap.xml"')
+    page = replace(page, 'href="privacy/"', 'href="../privacy/"')
 
     out = DOCS / "cs" / "index.html"
     out.parent.mkdir(exist_ok=True)

@@ -540,7 +540,8 @@ fn showing(ui: &mut egui::Ui, s: &mut Settings, reveal: &dyn Fn(usize) -> f32) {
         });
     });
 
-    block(ui, reveal(4), |ui| {
+    // The Store's copy can't play music videos, see `pipeline`.
+    block(ui, reveal(4), |ui| if !update::packaged() {
         card(ui, |ui| {
             heading(
                 ui,
