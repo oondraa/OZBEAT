@@ -1,7 +1,7 @@
-//! The share card (Ctrl+K or the button by the playback ones): the line being
-//! sung, big under the song's cover on its blurred colors, as a 1080×1920
-//! picture for stories. Saved under Pictures\OZBEAT and put on the clipboard,
-//! drawn on a thread of its own so the visuals don't stutter meanwhile.
+//! The share card (Ctrl+K): the line being sung, big under the song's cover
+//! on its blurred colors, as a 1080×1920 picture for stories. Saved under
+//! Pictures\OZBEAT and put on the clipboard, drawn on a thread of its own so
+//! the visuals don't stutter meanwhile.
 
 use std::path::PathBuf;
 use std::sync::{Arc, mpsc};

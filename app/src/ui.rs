@@ -1116,10 +1116,6 @@ impl VisualApp {
 
     /// Pauses or turns what plays louder or quieter, from a key or a button.
     fn playback(&mut self, press: Press) {
-        if press == Press::Share {
-            self.share_card();
-            return;
-        }
         let (source, now_playing) = {
             let scene = self.scene.lock().unwrap();
             (scene.source.clone(), scene.now_playing.clone())
@@ -1127,7 +1123,6 @@ impl VisualApp {
         let done = match press {
             Press::PlayPause => self.control.play_pause(source.as_ref()),
             Press::Next | Press::Previous => self.control.skip(source.as_ref(), press == Press::Next),
-            Press::Share => true,
             Press::Louder | Press::Quieter => self.control.step_volume(
                 source.as_ref(),
                 now_playing.as_ref(),
