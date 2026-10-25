@@ -461,7 +461,7 @@ impl eframe::App for VisualApp {
         let overlay = self.mode == Mode::Window && self.settings.lock().unwrap().overlay;
         self.set_overlay(&ctx, overlay);
         if overlay {
-            crate::frameless::show_layered();
+            crate::frameless::keep_bare();
             let frame = self.prepare_frame(&ctx);
             self.draw_overlay(ui, &frame);
             self.draw_toast(&ctx);

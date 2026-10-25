@@ -9,6 +9,17 @@ use raw_window_handle::HasWindowHandle;
 /// The main window, once `install` has seen it.
 #[cfg(windows)]
 static MAIN: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+/// The window is the lyrics over the desktop (see `set_glass`): no frame.
+#[cfg(windows)]
+static BARE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// What Windows would draw under glass: the frame and its buttons.
+#[cfg(windows)]
+const FRAME: u32 = {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        WS_CAPTION, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_SYSMENU, WS_THICKFRAME,
+    };
+    WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX
+};
 
 #[cfg(windows)]
 pub fn install(window: &impl HasWindowHandle) {
@@ -38,6 +49,7 @@ pub fn set_glass(on: bool) {
     use windows_sys::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
     use windows_sys::Win32::UI::Controls::MARGINS;
 
+    BARE.store(on, std::sync::atomic::Ordering::Relaxed);
     let hwnd = MAIN.load(std::sync::atomic::Ordering::Relaxed) as windows_sys::Win32::Foundation::HWND;
     if hwnd.is_null() {
         return;
@@ -62,21 +74,34 @@ pub fn set_glass(on: bool) {
 #[cfg(not(windows))]
 pub fn set_glass(_on: bool) {}
 
-/// Letting the mouse through makes winit turn the window "layered", and a
-/// layered window shows nothing of its picture until it is given an opacity.
-/// Call while the mouse passes through; harmless before winit gets to it.
+/// Keeps the window bare while it is the lyrics over the desktop; call every
+/// frame then, since winit sets the styles again whenever it changes one.
+///
+/// Under glass Windows draws the frame and the close, maximize and minimize
+/// buttons of any window that has them, so they go. And letting the mouse
+/// through makes winit turn the window "layered", which shows nothing of its
+/// picture until it is given an opacity. Leaving the overlay, winit's own
+/// style changes put the frame back.
 #[cfg(windows)]
-pub fn show_layered() {
+pub fn keep_bare() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GWL_EXSTYLE, GetWindowLongPtrW, LWA_ALPHA, SetLayeredWindowAttributes, WS_EX_LAYERED,
+        GWL_EXSTYLE, GWL_STYLE, GetWindowLongPtrW, LWA_ALPHA, SWP_FRAMECHANGED, SWP_NOACTIVATE,
+        SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetLayeredWindowAttributes, SetWindowLongPtrW,
+        SetWindowPos, WS_EX_LAYERED,
     };
 
     let hwnd = MAIN.load(std::sync::atomic::Ordering::Relaxed) as windows_sys::Win32::Foundation::HWND;
     if hwnd.is_null() {
         return;
     }
-    // SAFETY: a live window handle; both calls only read or set its styles.
+    // SAFETY: a live window handle; the calls only read or set its styles.
     unsafe {
+        let style = GetWindowLongPtrW(hwnd, GWL_STYLE) as u32;
+        if style & FRAME != 0 {
+            SetWindowLongPtrW(hwnd, GWL_STYLE, (style & !FRAME) as _);
+            let flags = SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE;
+            SetWindowPos(hwnd, std::ptr::null_mut(), 0, 0, 0, 0, flags);
+        }
         if GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32 & WS_EX_LAYERED != 0 {
             SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
         }
@@ -84,7 +109,7 @@ pub fn show_layered() {
 }
 
 #[cfg(not(windows))]
-pub fn show_layered() {}
+pub fn keep_bare() {}
 
 #[cfg(windows)]
 unsafe extern "system" fn proc(
@@ -101,8 +126,25 @@ unsafe extern "system" fn proc(
     use windows_sys::Win32::Graphics::Gdi::{BLACK_BRUSH, FillRect, GetStockObject};
     use windows_sys::Win32::UI::Shell::DefSubclassProc;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetClientRect, NCCALCSIZE_PARAMS, WM_ERASEBKGND, WM_NCCALCSIZE,
+        GWL_STYLE, GetClientRect, NCCALCSIZE_PARAMS, STYLESTRUCT, WM_ERASEBKGND, WM_NCACTIVATE,
+        WM_NCCALCSIZE, WM_NCPAINT, WM_STYLECHANGING,
     };
+
+    if BARE.load(std::sync::atomic::Ordering::Relaxed) {
+        match msg {
+            // winit puts the frame back on every focus change; keep it off.
+            WM_STYLECHANGING if wparam as i32 == GWL_STYLE => {
+                // SAFETY: for WM_STYLECHANGING, lparam points to the new styles.
+                unsafe { (*(lparam as *mut STYLESTRUCT)).styleNew &= !FRAME };
+                return 0;
+            }
+            // A click would light up the title bar: nothing to paint there.
+            WM_NCPAINT => return 0,
+            // -1: change the active state without redrawing the frame.
+            WM_NCACTIVATE => return unsafe { DefSubclassProc(hwnd, msg, wparam, -1) },
+            _ => {}
+        }
+    }
 
     if msg == WM_ERASEBKGND {
         // Black under the picture: hidden by it normally, clear under glass.
