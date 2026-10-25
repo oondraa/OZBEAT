@@ -531,6 +531,12 @@ fn showing(ui: &mut egui::Ui, s: &mut Settings, reveal: &dyn Fn(usize) -> f32) {
                     (LyricsStyle::Lens, "Čočka"),
                 ],
             );
+            switch(
+                ui,
+                &mut s.overlay,
+                "Texty přes plochu",
+                Some("Okno se změní na texty uprostřed obrazovky nad všemi aplikacemi. Zpátky odkudkoliv Ctrl+Alt+T."),
+            );
         });
     });
 

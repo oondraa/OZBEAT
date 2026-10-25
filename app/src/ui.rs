@@ -2,6 +2,7 @@
 
 use std::f32::consts::TAU;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use eframe::egui::{
@@ -214,6 +215,15 @@ pub struct VisualApp {
     previous_track: Option<(NowPlaying, Instant)>,
     transport: Transport,
     mirror_transport: Transport,
+    /// Raised by Ctrl+Alt+T anywhere in Windows; `None` in the screensaver.
+    overlay_key: Option<Arc<AtomicBool>>,
+    /// The window turned into the lyrics over the desktop, and whether it
+    /// was fullscreen and maximized before, to go back to that.
+    overlay: Option<(bool, bool)>,
+    /// The overlay covers its monitor and lets the mouse through.
+    overlay_ready: bool,
+    /// Where the window was before the overlay, to put it back.
+    overlay_rect: Option<(Pos2, Vec2)>,
 }
 
 /// The windows that take keys and clicks.
@@ -354,6 +364,10 @@ impl VisualApp {
             previous_track: None,
             transport: Transport::default(),
             mirror_transport: Transport::default(),
+            overlay_key: (mode == Mode::Window).then(|| crate::hotkey::spawn(cc.egui_ctx.clone())),
+            overlay: None,
+            overlay_ready: false,
+            overlay_rect: None,
         }
     }
 
@@ -435,8 +449,25 @@ impl VisualApp {
 }
 
 impl eframe::App for VisualApp {
+    /// Clear, so the lyrics over the desktop show nothing but themselves;
+    /// otherwise the background covers the whole window anyway.
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        [0.0; 4]
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        self.toggle_overlay_on_key();
+        let overlay = self.mode == Mode::Window && self.settings.lock().unwrap().overlay;
+        self.set_overlay(&ctx, overlay);
+        if overlay {
+            crate::frameless::show_layered();
+            let frame = self.prepare_frame(&ctx);
+            self.draw_overlay(ui, &frame);
+            self.draw_toast(&ctx);
+            ctx.request_repaint();
+            return;
+        }
         if self.mode == Mode::Screensaver {
             // On Windows the builder's fullscreen flag can be lost while the
             // main window is still hidden, and winit then ignores a repeated
@@ -1332,6 +1363,137 @@ impl VisualApp {
         );
         if wake {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+
+    /// Ctrl+Alt+T: the lyrics over the desktop on or off.
+    fn toggle_overlay_on_key(&mut self) {
+        let pressed = self
+            .overlay_key
+            .as_ref()
+            .is_some_and(|key| key.swap(false, Ordering::Relaxed));
+        if !pressed {
+            return;
+        }
+        let on = {
+            let mut s = self.settings.lock().unwrap();
+            s.overlay = !s.overlay;
+            s.save();
+            s.overlay
+        };
+        self.show_toast(if on {
+            "Texty přes plochu · vypneš Ctrl+Alt+T"
+        } else {
+            "Texty přes plochu vypnuté"
+        });
+    }
+
+    /// Turns the window into the lyrics over the desktop, or back: see-through,
+    /// fullscreen on its monitor, on top of every app and letting the mouse
+    /// through to whatever is under it.
+    fn set_overlay(&mut self, ctx: &egui::Context, on: bool) {
+        use egui::ViewportCommand as Command;
+        if on && self.overlay.is_some() {
+            self.settle_overlay(ctx);
+            return;
+        }
+        if on == self.overlay.is_some() {
+            return;
+        }
+        if on {
+            let (fullscreen, maximized) = ctx.input(|i| {
+                let v = i.viewport();
+                (v.fullscreen.unwrap_or(false), v.maximized.unwrap_or(false))
+            });
+            self.overlay = Some((fullscreen, maximized));
+            self.overlay_rect = ctx.input(|i| {
+                let v = i.viewport();
+                Some((v.outer_rect?.min, v.inner_rect?.size()))
+            });
+            if fullscreen {
+                ctx.send_viewport_cmd(Command::Fullscreen(false));
+            }
+            self.close_settings();
+            self.lyrics_focus = false;
+            // A maximized frameless window stays inside the work area, see `handle_fullscreen`.
+            if maximized {
+                ctx.send_viewport_cmd(Command::Maximized(false));
+            }
+            self.overlay_ready = false;
+            crate::frameless::set_glass(true);
+        } else if let Some((fullscreen, maximized)) = self.overlay.take() {
+            crate::frameless::set_glass(false);
+            ctx.send_viewport_cmd(Command::MousePassthrough(false));
+            ctx.send_viewport_cmd(Command::WindowLevel(egui::WindowLevel::Normal));
+            if let Some((pos, size)) = self.overlay_rect.take() {
+                ctx.send_viewport_cmd(Command::OuterPosition(pos));
+                ctx.send_viewport_cmd(Command::InnerSize(size));
+            }
+            ctx.send_viewport_cmd(Command::Fullscreen(fullscreen));
+            if maximized {
+                ctx.send_viewport_cmd(Command::Maximized(true));
+            }
+        }
+    }
+
+    /// A frame after the switch, the window covers its monitor (sized to it,
+    /// not fullscreen, which winit loses next to the other changes), goes on
+    /// top and lets the mouse through.
+    fn settle_overlay(&mut self, ctx: &egui::Context) {
+        use egui::ViewportCommand as Command;
+        if !self.overlay_ready {
+            // The monitor the window is on, moved over and sized to it.
+            let (center, ppp) = ctx.input(|i| {
+                (i.viewport().outer_rect.map(|r| r.center()), i.pixels_per_point())
+            });
+            let displays = display_info::DisplayInfo::all().unwrap_or_default();
+            let monitor = center.and_then(|c| {
+                let (x, y) = ((c.x * ppp) as i32, (c.y * ppp) as i32);
+                displays.iter().find(|d| {
+                    x >= d.x && x < d.x + d.width as i32 && y >= d.y && y < d.y + d.height as i32
+                })
+            });
+            if let Some(d) = monitor {
+                let scale = d.scale_factor.max(0.5);
+                ctx.send_viewport_cmd(Command::OuterPosition(Pos2::new(d.x as f32 / scale, d.y as f32 / scale)));
+                ctx.send_viewport_cmd(Command::InnerSize(Vec2::new(d.width as f32 / scale, d.height as f32 / scale)));
+            }
+            self.overlay_ready = true;
+            ctx.send_viewport_cmd(Command::WindowLevel(egui::WindowLevel::AlwaysOnTop));
+            ctx.send_viewport_cmd(Command::MousePassthrough(true));
+        }
+    }
+
+    /// The lyrics alone in the middle of the screen, white with a dark rim so
+    /// they read over anything. Nothing shows while there is nothing to sing.
+    fn draw_overlay(&mut self, ui: &mut egui::Ui, f: &FrameData) {
+        if f.idle {
+            return;
+        }
+        let rect = ui.max_rect();
+        let center_y = rect.center().y;
+        let size = big_lyrics_size(rect) * 0.8;
+        // As over a music video: white words with a dark rim.
+        let video = 1.0;
+        if let Some((e, at, alpha)) = &f.outgoing
+            && let Some(lyrics) = e.lyrics.as_ref()
+        {
+            let line = lyrics.line_at(*at).map_or(-1.0, |i| i as f32);
+            draw_outgoing(ui, rect, f, video, lyrics, *at, line, center_y, size, *alpha);
+        }
+        let lyrics = f
+            .enrichment
+            .as_ref()
+            .and_then(|e| e.lyrics.as_ref())
+            .filter(|l| !l.synced.is_empty());
+        if let Some(lyrics) = lyrics.filter(|_| f.lyrics > 0.0) {
+            let line = f
+                .position
+                .and_then(|p| lyrics.line_at(p))
+                .map_or(-1.0, |i| i as f32);
+            let mut painter = ui.painter().clone();
+            painter.multiply_opacity(f.lyrics);
+            draw_timed_lyrics(&painter, rect, f, f.position, video, lyrics, line, center_y, size);
         }
     }
 

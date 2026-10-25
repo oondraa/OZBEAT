@@ -68,6 +68,8 @@ pub struct Settings {
     pub buttons: bool,
     /// Ctrl+Up/Down, Ctrl+Left/Right and Ctrl+Space control what plays.
     pub playback_keys: bool,
+    /// The lyrics alone over the desktop and every app (Ctrl+Alt+T).
+    pub overlay: bool,
 }
 
 impl Default for Settings {
@@ -83,6 +85,7 @@ impl Default for Settings {
             wled: String::new(),
             buttons: true,
             playback_keys: true,
+            overlay: false,
         }
     }
 }
