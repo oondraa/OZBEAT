@@ -41,6 +41,12 @@ pub fn install(window: &impl HasWindowHandle) {
 #[cfg(not(windows))]
 pub fn install(_window: &impl HasWindowHandle) {}
 
+/// The main window's handle, null before `install`.
+#[cfg(windows)]
+pub fn main_window() -> windows_sys::Win32::Foundation::HWND {
+    MAIN.load(std::sync::atomic::Ordering::Relaxed) as _
+}
+
 /// See-through (`on`) or not: with the glass over the whole window, Windows
 /// shows what lies behind wherever the picture is clear, instead of filling
 /// it with white.
