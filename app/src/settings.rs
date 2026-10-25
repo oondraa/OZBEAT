@@ -22,11 +22,15 @@ pub enum AudioMode {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LyricsStyle {
-    /// One word at a time, stacking up as each is sung.
+    /// One word at a time, stacking up as each is sung. Settings saved with
+    /// the whole-lines style, since dropped, come back as this.
     #[default]
+    #[serde(alias = "lines")]
     Words,
-    /// Whole lines scrolling by, lit word by word.
-    Lines,
+    /// Lines around a turning drum, in perspective, lit word by word.
+    Drum,
+    /// One word at a time like `Words`, seen through a fisheye lens.
+    Lens,
 }
 
 /// Where the music video plays once Ctrl+D (or the screensaver) puts the
@@ -60,6 +64,10 @@ pub struct Settings {
     pub clip_screen: ClipScreen,
     /// IP address or host name of a WLED light to drive; empty = off.
     pub wled: String,
+    /// Buttons for the volume and pausing that show while the mouse moves.
+    pub buttons: bool,
+    /// Ctrl+Up/Down, Ctrl+Left/Right and Ctrl+Space control what plays.
+    pub playback_keys: bool,
 }
 
 impl Default for Settings {
@@ -73,6 +81,8 @@ impl Default for Settings {
             youtube: false,
             clip_screen: ClipScreen::Lyrics,
             wled: String::new(),
+            buttons: true,
+            playback_keys: true,
         }
     }
 }

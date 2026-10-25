@@ -1,5 +1,5 @@
-//! Controlling what plays from the keyboard: Ctrl+Up/Down for the volume,
-//! Ctrl+Space to pause and resume. BluOS speakers are told directly; for
+//! Controlling what plays, from the keyboard and the on-screen buttons:
+//! the volume, pausing and skipping. BluOS speakers are told directly; for
 //! apps on this computer (SMTC) the volume is Windows' own, as with the
 //! volume keys.
 
@@ -18,6 +18,7 @@ const TARGET_KEPT: Duration = Duration::from_millis(1500);
 enum Command {
     Volume(SourceId, u8),
     PlayPause(SourceId),
+    Skip(SourceId, bool),
     #[cfg(windows)]
     SystemVolume(bool),
 }
@@ -76,6 +77,12 @@ impl Control {
     pub fn play_pause(&self, source: Option<&SourceId>) -> bool {
         source.is_some_and(|s| self.tx.send(Command::PlayPause(s.clone())).is_ok())
     }
+
+    /// The next song, or (`forward` false) the previous one. `false` when
+    /// there is nothing to control.
+    pub fn skip(&self, source: Option<&SourceId>, forward: bool) -> bool {
+        source.is_some_and(|s| self.tx.send(Command::Skip(s.clone(), forward)).is_ok())
+    }
 }
 
 fn run(rx: &Receiver<Command>) {
@@ -106,6 +113,12 @@ fn execute(command: Command) {
             "smtc" => {
                 mv_sources::smtc::toggle_play_pause(&source.instance).map_err(|e| e.to_string())
             }
+            _ => Ok(()),
+        },
+        Command::Skip(source, forward) => match source.kind {
+            "bluos" => mv_sources::bluos::skip(&source.instance, *forward),
+            #[cfg(windows)]
+            "smtc" => mv_sources::smtc::skip(&source.instance, *forward).map_err(|e| e.to_string()),
             _ => Ok(()),
         },
         #[cfg(windows)]

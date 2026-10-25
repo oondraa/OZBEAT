@@ -14,6 +14,7 @@ mod pipeline;
 mod settings;
 mod setup;
 mod titlebar;
+mod transport;
 mod ui;
 mod update;
 mod volume;
@@ -48,6 +49,7 @@ SCREENSAVER (rename or copy the exe to OZBEAT.scr, then right-click > Install):
 KEYS:
     Ctrl+S               settings
     Ctrl+D               mirror the visuals on the next screen
+    Ctrl+L               next lyrics style (words, drum, lens)
     F11 / double-click   toggle fullscreen
     Esc                  leave fullscreen / close settings
 

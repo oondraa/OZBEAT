@@ -25,10 +25,11 @@ impl LyricLine {
     }
 
     /// How many characters of the line are sung at `position`, fractional
-    /// inside the word being sung. `next` is when the following line starts.
-    /// Without word times, the words are spread over a guess of how long the
-    /// line is sung for, each by its length.
-    pub fn sung_chars(&self, position: Duration, next: Option<Duration>) -> f32 {
+    /// inside the word being sung. `next` is when the following line starts
+    /// and `pace` the song's usual seconds per syllable, if known. Without
+    /// word times, the words are spread over a guess of how long the line is
+    /// sung for, each by its syllables.
+    pub fn sung_chars(&self, position: Duration, next: Option<Duration>, pace: Option<f64>) -> f32 {
         let len = self.text.chars().count();
         if position <= self.at || len == 0 {
             return 0.0;
@@ -54,23 +55,26 @@ impl LyricLine {
             return len as f32;
         }
 
-        let words = self.word_spans();
-        let per_weight = self.estimated_pace(&words, next);
+        let words = self.weighed_words();
+        let per_weight = self.estimated_pace(&words, next, pace);
         let mut left = (now - self.at.as_secs_f64()) / per_weight.max(1e-6);
-        for word in &words {
-            let w = weight(word);
-            if left < w {
-                return word.start as f32 + word.len() as f32 * (left / w) as f32;
+        for (word, w) in &words {
+            if left < w.sung {
+                return word.start as f32 + word.len() as f32 * (left / w.sung) as f32;
             }
-            left -= w;
+            // Holds at the word's end through a breath after it.
+            if left < w.total() {
+                return word.end as f32;
+            }
+            left -= w.total();
         }
         len as f32
     }
 
     /// The line's words (split at whitespace, as character ranges) and when
     /// each starts being sung, by the same timing as [`Self::sung_chars`].
-    pub fn word_starts(&self, next: Option<Duration>) -> Vec<(Range<usize>, Duration)> {
-        let words = self.word_spans();
+    pub fn word_starts(&self, next: Option<Duration>, pace: Option<f64>) -> Vec<(Range<usize>, Duration)> {
+        let words = self.weighed_words();
         if !self.words.is_empty() {
             // The timed piece the word's first letter is in.
             let start = |first: usize| {
@@ -82,31 +86,30 @@ impl LyricLine {
             };
             return words
                 .into_iter()
-                .map(|w| {
+                .map(|(w, _)| {
                     let at = start(w.start);
                     (w, at)
                 })
                 .collect();
         }
-        let per_weight = self.estimated_pace(&words, next);
+        let per_weight = self.estimated_pace(&words, next, pace);
         let mut done = 0.0;
         words
             .into_iter()
-            .map(|w| {
+            .map(|(w, weight)| {
                 let at = self.at + Duration::from_secs_f64(done * per_weight);
-                done += weight(&w);
+                done += weight.total();
                 (w, at)
             })
             .collect()
     }
 
-    /// Words as character ranges, split at whitespace.
-    fn word_spans(&self) -> Vec<Range<usize>> {
+    /// Words as character ranges, split at whitespace, with their weights.
+    fn weighed_words(&self) -> Vec<(Range<usize>, Weight)> {
+        let chars: Vec<char> = self.text.chars().collect();
         let mut words = Vec::new();
         let mut from = None;
-        let mut len = 0;
-        for (i, c) in self.text.chars().enumerate() {
-            len = i + 1;
+        for (i, c) in chars.iter().enumerate() {
             match (c.is_whitespace(), from) {
                 (false, None) => from = Some(i),
                 (true, Some(f)) => {
@@ -117,22 +120,43 @@ impl LyricLine {
             }
         }
         if let Some(f) = from {
-            words.push(f..len);
+            words.push(f..chars.len());
         }
         words
+            .into_iter()
+            .map(|w| {
+                let weight = Weight::of(&chars[w.clone()]);
+                (w, weight)
+            })
+            .collect()
     }
 
-    /// Seconds per [`weight`] unit when the words' times are guessed: the
-    /// line is sung over the time until the next one, or less.
-    fn estimated_pace(&self, words: &[Range<usize>], next: Option<Duration>) -> f64 {
+    /// The line's length in [`Weight`] units, about its syllables.
+    fn weight(&self) -> f64 {
+        self.weighed_words().iter().map(|(_, w)| w.total()).sum()
+    }
+
+    /// Seconds per [`Weight`] unit when the words' times are guessed: the
+    /// line is sung over the time until the next one, or less when that
+    /// leaves a pause, judged by the song's usual `pace`.
+    fn estimated_pace(
+        &self,
+        words: &[(Range<usize>, Weight)],
+        next: Option<Duration>,
+        pace: Option<f64>,
+    ) -> f64 {
         /// Leaves a breath before the next line.
         const GAP_SHARE: f64 = 0.9;
-        let len = self.text.chars().count();
-        let total: f64 = words.iter().map(weight).sum();
-        let sung_for = next.map_or(longest(len), |n| {
-            ((n.as_secs_f64() - self.at.as_secs_f64()) * GAP_SHARE).min(longest(len))
+        /// How much slower than the song's usual pace a line may be sung.
+        const SLACK: f64 = 1.35;
+        let total = words.iter().map(|(_, w)| w.total()).sum::<f64>().max(1.0);
+        let slowest = pace.map_or(longest(self.text.chars().count()), |pace| {
+            0.25 + total * pace * SLACK
         });
-        sung_for / total.max(1.0)
+        let sung_for = next.map_or(slowest, |n| {
+            ((n.as_secs_f64() - self.at.as_secs_f64()) * GAP_SHARE).min(slowest)
+        });
+        sung_for / total
     }
 }
 
@@ -144,10 +168,56 @@ fn longest(chars: usize) -> f64 {
     0.5 + MAX_PER_CHAR * chars as f64
 }
 
-/// A word's share of a line's time: its letters plus one, so short words
-/// still take a moment.
-fn weight(word: &Range<usize>) -> f64 {
-    word.len() as f64 + 1.0
+/// A word's share of a line's time, in about syllables: the sung part, then
+/// a breath when punctuation ends it.
+#[derive(Debug, Clone, Copy)]
+struct Weight {
+    sung: f64,
+    pause: f64,
+}
+
+impl Weight {
+    fn of(word: &[char]) -> Self {
+        /// Even a one-syllable word takes a moment to get out.
+        const BASE: f64 = 0.35;
+        let pause = match word.last() {
+            Some('.' | '!' | '?' | '…') => 0.9,
+            Some(',' | ';' | ':' | '-' | '–') => 0.5,
+            _ => 0.0,
+        };
+        Self {
+            sung: BASE + syllables(word).max(0.5),
+            pause,
+        }
+    }
+
+    fn total(&self) -> f64 {
+        self.sung + self.pause
+    }
+}
+
+/// Syllables in a Czech or English word: each run of vowels is one, and so
+/// is an `r` or `l` between consonants, as in „vlk“ or „srdce“. Digits count
+/// one each, as they're read out.
+fn syllables(word: &[char]) -> f64 {
+    let vowel = |c: char| "aeiouyáéěíóúůýäöüàèìòùâêîôû".contains(c);
+    let consonant = |c: char| c.is_alphabetic() && !vowel(c);
+    let lower: Vec<char> = word.iter().flat_map(|c| c.to_lowercase()).collect();
+    let mut count = 0;
+    for (i, &c) in lower.iter().enumerate() {
+        let prev = i.checked_sub(1).map(|p| lower[p]);
+        let next = lower.get(i + 1).copied();
+        let nucleus = if vowel(c) {
+            !prev.is_some_and(vowel)
+        } else if c == 'r' || c == 'l' {
+            prev.is_some_and(|p| consonant(p) && p != 'r' && p != 'l')
+                && !next.is_some_and(vowel)
+        } else {
+            c.is_ascii_digit()
+        };
+        count += usize::from(nucleus);
+    }
+    count as f64
 }
 
 #[derive(Debug, Clone, Default)]
@@ -165,6 +235,73 @@ impl Lyrics {
         self.synced
             .partition_point(|l| l.at <= position)
             .checked_sub(1)
+    }
+
+    /// Characters of line `i` sung at `position`, see [`LyricLine::sung_chars`].
+    pub fn sung_chars(&self, i: usize, position: Duration) -> f32 {
+        let next = self.synced.get(i + 1).map(|l| l.at);
+        self.synced[i].sung_chars(position, next, self.pace())
+    }
+
+    /// When each word of line `i` starts, see [`LyricLine::word_starts`].
+    pub fn word_starts(&self, i: usize) -> Vec<(Range<usize>, Duration)> {
+        let next = self.synced.get(i + 1).map(|l| l.at);
+        self.synced[i].word_starts(next, self.pace())
+    }
+
+    /// Whether lyrics belong on screen at `position`: from shortly before
+    /// the first line to a little after the last one has been sung, and not
+    /// in a long instrumental break. The intro, the outro and such breaks
+    /// have nothing to read, so the screen can give the room back.
+    pub fn sung_near(&self, position: Duration) -> bool {
+        /// Lyrics come in this long before their first word.
+        const LEAD: Duration = Duration::from_millis(1500);
+        /// And stay this long after the last word.
+        const TAIL: Duration = Duration::from_secs(4);
+        /// Shorter breaks keep them, so they don't flicker away mid-verse.
+        const BREAK: Duration = Duration::from_secs(12);
+
+        let sung = |l: &LyricLine| !l.text.trim().is_empty();
+        let Some(i) = self.line_at(position) else {
+            return self
+                .synced
+                .iter()
+                .find(|l| sung(l))
+                .is_some_and(|l| l.at <= position + LEAD);
+        };
+        let line = &self.synced[i];
+        // A blank line marks where singing stops; otherwise just after the last word.
+        let end = if sung(line) {
+            line.end.unwrap_or_else(|| {
+                self.word_starts(i).last().map_or(line.at, |(_, at)| *at) + Duration::from_millis(800)
+            })
+        } else {
+            line.at
+        };
+        let next = self.synced[i + 1..].iter().find(|l| sung(l)).map(|l| l.at);
+        position <= end + TAIL
+            || next.is_some_and(|next| next <= position + LEAD || next.saturating_sub(end) < BREAK)
+    }
+
+    /// The song's usual seconds per syllable, from how long each line has
+    /// until the next. Some of those gaps hold a pause, so it takes a faster
+    /// share than the median: a rapper's line then sweeps at rap speed even
+    /// right before a break.
+    pub fn pace(&self) -> Option<f64> {
+        /// The share of lines sung at least this fast.
+        const QUANTILE: f64 = 0.35;
+        let mut paces: Vec<f64> = self
+            .synced
+            .windows(2)
+            .filter(|w| w[0].words.is_empty() && !w[0].text.trim().is_empty())
+            .map(|w| (w[1].at - w[0].at).as_secs_f64() / w[0].weight().max(1.0))
+            .collect();
+        if self.estimated || paces.len() < 6 {
+            return None;
+        }
+        paces.sort_by(f64::total_cmp);
+        let pace = paces[((paces.len() - 1) as f64 * QUANTILE) as usize];
+        Some(pace.clamp(0.08, 0.6))
     }
 }
 
@@ -364,7 +501,7 @@ mod tests {
         assert_eq!(words, [(0, 12_300), (6, 12_800)]);
         assert_eq!(line.end, Some(Duration::from_millis(13_400)));
         // Halfway through "big world"'s time, halfway through its characters.
-        let at = |ms| line.sung_chars(Duration::from_millis(ms), None);
+        let at = |ms| line.sung_chars(Duration::from_millis(ms), None, None);
         assert_eq!(at(12_000), 0.0);
         assert!((at(13_100) - 10.5).abs() < 0.01);
         assert_eq!(at(14_000), 15.0);
@@ -378,13 +515,13 @@ mod tests {
     fn estimates_words_inside_a_line() {
         let line = LyricLine::new(Duration::from_secs(10), "aa bbbb".to_owned());
         let next = Some(Duration::from_secs(20));
-        let at = |s: f64| line.sung_chars(Duration::from_secs_f64(s), next);
+        let at = |s: f64| line.sung_chars(Duration::from_secs_f64(s), next, None);
         assert_eq!(at(9.0), 0.0);
         assert!(at(10.5) > 0.0 && at(10.5) < at(11.0));
         // Done well before an instrumental gap ends.
         assert_eq!(at(12.5), 7.0);
         // A quick next line squeezes the sweep in before it.
-        let quick = line.sung_chars(Duration::from_millis(10_900), Some(Duration::from_secs(11)));
+        let quick = line.sung_chars(Duration::from_millis(10_900), Some(Duration::from_secs(11)), None);
         assert_eq!(quick, 7.0);
     }
 
@@ -392,18 +529,110 @@ mod tests {
     fn times_each_word() {
         let secs = |s: f64| Duration::from_secs_f64(s);
         let line = LyricLine::new(secs(10.0), "aa  bbbb c".to_owned());
-        let starts = line.word_starts(Some(secs(20.0)));
+        let starts = line.word_starts(Some(secs(20.0)), None);
         let ranges: Vec<_> = starts.iter().map(|(r, _)| r.clone()).collect();
         assert_eq!(ranges, [0..2, 4..8, 9..10]);
         // Each word starts as the sweep reaches it.
         for (range, at) in &starts {
-            let sung = line.sung_chars(*at + secs(0.001), Some(secs(20.0)));
+            let sung = line.sung_chars(*at + secs(0.001), Some(secs(20.0)), None);
             assert!((sung - range.start as f32).abs() < 0.1, "{range:?} at {at:?}: {sung}");
         }
 
         let (text, words, end) = parse_words("<00:01.00>Hel<00:01.50>lo <00:02.00>world");
         let timed = LyricLine { at: secs(1.0), text, words, end };
-        let starts: Vec<_> = timed.word_starts(None).into_iter().map(|(_, at)| at).collect();
+        let starts: Vec<_> = timed.word_starts(None, None).into_iter().map(|(_, at)| at).collect();
         assert_eq!(starts, [secs(1.0), secs(2.0)]);
+    }
+
+    #[test]
+    fn counts_syllables() {
+        let count = |w: &str| syllables(&w.chars().collect::<Vec<_>>());
+        for (word, n) in [
+            ("na", 1.0),
+            ("rohu", 2.0),
+            ("stojím", 2.0),
+            ("Peníze", 3.0),
+            ("vlk", 1.0),
+            ("srdce", 2.0),
+            ("smrt,", 1.0),
+            ("Petr", 2.0),
+            ("world", 1.0),
+            ("strong", 1.0),
+            ("people", 2.0),
+            ("2024", 4.0),
+            ("&", 0.0),
+        ] {
+            assert_eq!(count(word), n, "{word}");
+        }
+    }
+
+    #[test]
+    fn long_words_and_breaths_take_longer() {
+        let secs = |s: f64| Duration::from_secs_f64(s);
+        let line = LyricLine::new(secs(10.0), "a peníze, hoří".to_owned());
+        let at: Vec<f64> = line
+            .word_starts(Some(secs(14.0)), None)
+            .iter()
+            .map(|(_, at)| at.as_secs_f64() - 10.0)
+            .collect();
+        // „a“ is short; „peníze,“ has three syllables and a breath after it.
+        assert!(at[2] - at[1] > 2.5 * (at[1] - at[0]), "{at:?}");
+        // Through the breath, the sweep holds at the comma.
+        let comma = 9.0;
+        let held = line.sung_chars(secs(10.0) + Duration::from_secs_f64(at[2] - 0.05), Some(secs(14.0)), None);
+        assert_eq!(held, comma);
+    }
+
+    #[test]
+    fn learns_the_songs_pace() {
+        // Quick rap lines, two seconds each, then one before a long break.
+        let mut lrc = String::new();
+        for k in 0..8 {
+            lrc += &format!("[00:{:02}.00]jedu jedu jedu jedu jedu\n", 10 + 2 * k);
+        }
+        lrc += "[00:26.00]jedu jedu jedu jedu jedu\n[00:50.00]konec";
+        let lyrics = Lyrics {
+            synced: parse(&lrc),
+            plain: None,
+            estimated: false,
+        };
+        let pace = lyrics.pace().unwrap();
+        assert!((0.1..0.25).contains(&pace), "{pace}");
+        // The line before the break sweeps about as fast as the others, not
+        // over the whole gap.
+        let done = |i: usize| {
+            let line = &lyrics.synced[i];
+            let len = line.text.chars().count() as f32;
+            (0..400)
+                .map(|ms| line.at + Duration::from_millis(ms * 10))
+                .find(|&p| lyrics.sung_chars(i, p) >= len)
+                .unwrap()
+                - line.at
+        };
+        assert!(done(8) < done(0) * 2, "{:?} vs {:?}", done(8), done(0));
+    }
+
+    #[test]
+    fn lyrics_leave_the_intro_outro_and_long_breaks() {
+        let lyrics = Lyrics {
+            synced: parse(
+                "[00:20.00]<00:20.00>prvni <00:20.50>radek<00:21.00>
+                 [00:24.00]druhy radek
+                 [00:27.00]
+                 [01:10.00]po pauze
+                 [01:13.00]posledni",
+            ),
+            plain: None,
+            estimated: false,
+        };
+        let at = |s: f32| lyrics.sung_near(Duration::from_secs_f32(s));
+        assert!(!at(5.0), "intro");
+        assert!(at(19.0), "just before the first line");
+        assert!(at(22.0), "a short gap between lines");
+        assert!(at(30.0), "right after the blank line");
+        assert!(!at(45.0), "a long instrumental break");
+        assert!(at(69.0), "back before the next line");
+        assert!(!at(100.0), "the outro");
+        assert!(!Lyrics::default().sung_near(Duration::ZERO));
     }
 }

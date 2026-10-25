@@ -38,6 +38,7 @@ const MOTION: (char, Color32) = ('\u{e2de}', Color32::from_rgb(0xFF, 0x9F, 0x2E)
 const LYRICS: (char, Color32) = ('\u{e16c}', BRAND_BLUE);
 const CLIPS: (char, Color32) = ('\u{e4da}', Color32::from_rgb(0xFF, 0x45, 0x45));
 const LIGHT: (char, Color32) = ('\u{e2dc}', Color32::from_rgb(0xF5, 0xC5, 0x18));
+const CONTROL: (char, Color32) = ('\u{e298}', Color32::from_rgb(0x2E, 0xC4, 0xD6));
 const UPDATE: (char, Color32) = ('\u{e6a2}', Color32::from_rgb(0x2F, 0xC2, 0x7A));
 
 /// Draws the panel. Returns `false` once the user confirms with "Hotovo".
@@ -376,6 +377,7 @@ fn footer(ui: &mut egui::Ui) {
         for (keys, what) in [
             ("Ctrl+S", "nastavení"),
             ("Ctrl+D", "druhá obrazovka"),
+            ("Ctrl+L", "styl textů"),
             ("F11", "celá obrazovka"),
         ] {
             egui::Frame::new()
@@ -485,6 +487,29 @@ fn listening(
             });
         });
     });
+
+    block(ui, reveal(3), |ui| {
+        card(ui, |ui| {
+            heading(
+                ui,
+                CONTROL,
+                "Ovládání",
+                "Hlasitost, pauza a přeskakování toho, co hraje.",
+            );
+            switch(
+                ui,
+                &mut s.buttons,
+                "Tlačítka na obrazovce",
+                Some("Ukážou se vpravo dole, když pohneš myší."),
+            );
+            switch(
+                ui,
+                &mut s.playback_keys,
+                "Klávesové zkratky",
+                Some("Ctrl+↑ / ↓ hlasitost, Ctrl+← / → přeskočit, Ctrl+mezerník pauza."),
+            );
+        });
+    });
 }
 
 /// The right column: lyrics, videos and the light.
@@ -502,7 +527,8 @@ fn showing(ui: &mut egui::Ui, s: &mut Settings, reveal: &dyn Fn(usize) -> f32) {
                 &mut s.lyrics,
                 &[
                     (LyricsStyle::Words, "Po slovech"),
-                    (LyricsStyle::Lines, "Celé řádky"),
+                    (LyricsStyle::Drum, "Válec"),
+                    (LyricsStyle::Lens, "Čočka"),
                 ],
             );
         });
