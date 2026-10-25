@@ -115,7 +115,10 @@ pub async fn run(opts: Options, scene: SharedScene, settings: SharedSettings) {
             Some(found) = video_rx.recv() => videos.found(found),
             _ = tick.tick() => {
                 // Settings can change any time from the setup screen.
-                let settings = settings.lock().unwrap().clone();
+                let mut settings = settings.lock().unwrap().clone();
+                // The Microsoft Store doesn't allow downloading the YouTube
+                // tool (code the Store hasn't checked), so its copy has no videos.
+                settings.youtube &= !crate::update::packaged();
                 let active = registry.active_where(|d| settings.allows(d));
                 if settings.youtube && fetcher.is_none() {
                     fetcher = Some(Arc::new(VideoFetcher::from_env()));

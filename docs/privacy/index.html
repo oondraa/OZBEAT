@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OZBEAT Privacy</title>
+<meta name="description" content="What OZBEAT, the music visualizer for Windows by oondraa, sends over the internet and keeps on your PC.">
+<link rel="canonical" href="https://oondraa.github.io/OZBEAT/privacy/">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0c0a0b">
+<style>
+  @font-face {
+    font-family: "Geist";
+    src: url("../fonts/geist-latin-wght-normal.woff2") format("woff2");
+    font-weight: 100 900; font-display: swap;
+  }
+  @font-face {
+    font-family: "Geist";
+    src: url("../fonts/geist-latin-ext-wght-normal.woff2") format("woff2");
+    font-weight: 100 900; font-display: swap;
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F;
+  }
+  :root {
+    --bg: #0c0a0b; --text: #ffffff; --muted: rgba(255, 255, 255, 0.68); --line: rgba(255, 255, 255, 0.14);
+    --brand: #2d8cff;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Segoe UI Variable Text", "Segoe UI", "Geist", ui-sans-serif, system-ui, sans-serif;
+    font-size: 16px; line-height: 1.65; -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 64px 16px 80px; }
+  a { color: var(--brand); }
+  .back { font-size: 15px; text-decoration: none; }
+  h1 { margin: 24px 0 4px; font-size: clamp(32px, 6vw, 44px); line-height: 1.1; letter-spacing: -0.02em; }
+  h2 { margin: 40px 0 8px; font-size: 21px; letter-spacing: -0.01em; }
+  p, li { color: var(--muted); }
+  ul { padding-left: 20px; }
+  li { margin: 6px 0; }
+  b { color: var(--text); font-weight: 600; }
+  .date { color: var(--muted); font-size: 14px; }
+  hr { margin: 56px 0 0; border: 0; border-top: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="../">← OZBEAT</a>
+
+  <h1>Privacy</h1>
+  <p class="date">OZBEAT for Windows · updated 25 October 2026</p>
+
+  <p>OZBEAT has no account, no ads and no analytics. It doesn't collect anything about you and has no server of its own. To show what you're playing, it asks a few public music services about the song.</p>
+
+  <h2>What leaves your PC</h2>
+  <ul>
+    <li><b>The song's title, artist, album and length</b>, to find lyrics (LRCLIB), cover art and tempo (Deezer, iTunes), and artist photos (fanart.tv, TheAudioDB).</li>
+    <li><b>The song's title and artist on YouTube</b>, only if you turn on music videos.</li>
+    <li><b>A check for a new version</b> on GitHub, in the copy downloaded from GitHub. The Microsoft Store copy is updated by the Store instead.</li>
+    <li><b>Colors and brightness</b> to your WLED light, only if you enter its address. This stays on your home network.</li>
+  </ul>
+  <p>These services see your IP address like any website does. Their own privacy policies apply to what they receive. OZBEAT sends them nothing else: no name, no account and no listening history.</p>
+
+  <h2>What stays on your PC</h2>
+  <ul>
+    <li><b>Your settings</b>, in your Windows profile.</li>
+    <li><b>A cache</b> of lyrics, covers and music videos, so songs load faster the next time. OZBEAT trims it on its own.</li>
+  </ul>
+
+  <h2>Microphone</h2>
+  <p>If you pick the microphone in the settings, OZBEAT listens to how loud the music in the room is, so the picture moves with it. The sound is measured on your PC and never recorded, saved or sent anywhere.</p>
+
+  <h2>Your music players</h2>
+  <p>OZBEAT reads what plays from the Windows media controls and from BluOS speakers on your network. With the buttons or shortcuts it can pause, skip and change the volume of what plays. It does this only on your PC and your network.</p>
+
+  <h2>Contact</h2>
+  <p>Questions: <a href="https://github.com/oondraa/OZBEAT/issues">github.com/oondraa/OZBEAT/issues</a>. OZBEAT is made by Ondřej Zajíček (oondraa).</p>
+
+  <hr>
+
+  <h1 lang="cs">Soukromí</h1>
+  <div lang="cs">
+    <p>OZBEAT nemá účet, reklamy ani statistiky. Nic o vás nesbírá a nemá vlastní server. Aby ukázal, co hraje, zeptá se pár veřejných hudebních služeb na písničku.</p>
+
+    <h2>Co odchází z počítače</h2>
+    <ul>
+      <li><b>Název, interpret, album a délka písničky</b>, kvůli textům (LRCLIB), obalu a tempu (Deezer, iTunes) a fotkám interpreta (fanart.tv, TheAudioDB).</li>
+      <li><b>Název a interpret na YouTube</b>, jen když zapnete videoklipy.</li>
+      <li><b>Kontrola nové verze</b> na GitHubu, u verze stažené z GitHubu. Verzi z Microsoft Storu aktualizuje Store.</li>
+      <li><b>Barvy a jas</b> do světla WLED, jen když zadáte jeho adresu. To zůstává ve vaší domácí síti.</li>
+    </ul>
+    <p>Tyhle služby vidí vaši IP adresu jako každý web. Na to, co dostanou, se vztahují jejich vlastní zásady. OZBEAT jim nic dalšího neposílá: žádné jméno, účet ani historii poslechu.</p>
+
+    <h2>Co zůstává v počítači</h2>
+    <ul>
+      <li><b>Nastavení</b>, ve vašem profilu ve Windows.</li>
+      <li><b>Mezipaměť</b> textů, obalů a videoklipů, aby se písničky příště načetly rychleji. OZBEAT ji sám promazává.</li>
+    </ul>
+
+    <h2>Mikrofon</h2>
+    <p>Když v nastavení zvolíte mikrofon, OZBEAT poslouchá, jak hlasitě hraje hudba v místnosti, aby se obraz hýbal s ní. Zvuk se jen měří ve vašem počítači a nikdy se nenahrává, neukládá ani neposílá.</p>
+
+    <h2>Vaše přehrávače</h2>
+    <p>OZBEAT čte, co hraje, z ovládání médií ve Windows a z reproduktorů BluOS ve vaší síti. Tlačítky nebo zkratkami umí pozastavit, přeskočit a změnit hlasitost. Dělá to jen ve vašem počítači a vaší síti.</p>
+
+    <h2>Kontakt</h2>
+    <p>Dotazy: <a href="https://github.com/oondraa/OZBEAT/issues">github.com/oondraa/OZBEAT/issues</a>. OZBEAT dělá Ondřej Zajíček (oondraa).</p>
+  </div>
+</main>
+</body>
+</html>
