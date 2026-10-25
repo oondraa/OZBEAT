@@ -115,6 +115,11 @@ pub fn set_volume(host: &str, level: u8) -> Result<(), String> {
     command(host, &format!("/Volume?level={}", level.min(100)))
 }
 
+/// The next song in the queue, or (`forward` false) the previous one.
+pub fn skip(host: &str, forward: bool) -> Result<(), String> {
+    command(host, if forward { "/Skip" } else { "/Back" })
+}
+
 /// Pauses a playing player, resumes a paused one.
 pub fn toggle_pause(host: &str) -> Result<(), String> {
     command(host, "/Pause?toggle=1")

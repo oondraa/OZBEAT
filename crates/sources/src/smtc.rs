@@ -88,6 +88,21 @@ pub fn toggle_play_pause(app: &str) -> windows::core::Result<()> {
     Ok(())
 }
 
+/// The next song, or (`forward` false) the previous one.
+pub fn skip(app: &str, forward: bool) -> windows::core::Result<()> {
+    let manager = Manager::RequestAsync()?.join()?;
+    for session in manager.GetSessions()? {
+        if session.SourceAppUserModelId()? == app {
+            if forward {
+                session.TrySkipNextAsync()?.join()?;
+            } else {
+                session.TrySkipPreviousAsync()?.join()?;
+            }
+        }
+    }
+    Ok(())
+}
+
 fn read_session(
     session: &Session,
     app: &str,

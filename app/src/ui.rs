@@ -24,6 +24,7 @@ use crate::pipeline::SharedScene;
 use crate::settings::{ClipScreen, LyricsStyle, SharedSettings};
 use crate::setup::{self, BRAND_BLUE};
 use crate::titlebar::TitleBar;
+use crate::transport::{Press, Transport};
 use crate::update::{self, SharedUpdate};
 use crate::control::Control;
 use crate::icons;
@@ -47,7 +48,12 @@ const MIRROR_READY: u32 = 3;
 const FOCUS_OPEN: Duration = Duration::from_millis(550);
 const FOCUS_CLOSE: Duration = Duration::from_millis(400);
 /// Lyrics fading in once they have loaded (seconds).
-const LYRICS_READY: f32 = 0.45;
+const LYRICS_IN: Duration = Duration::from_millis(450);
+/// How long lyrics take to fade out when there is nothing left to sing, while
+/// the cover glides into the middle.
+const LYRICS_OUT: Duration = Duration::from_millis(800);
+/// A new song's titles fading in over the last one's.
+const TRACK_FADE: Duration = Duration::from_millis(600);
 /// Brightness of the current line's words still to be sung, against the sung ones.
 const UNSUNG: f32 = 0.45;
 /// The music video fading in over the background once its first frame is in (seconds).
@@ -192,6 +198,30 @@ pub struct VisualApp {
     /// The lyrics screen clicked: the video big, the lyrics small below.
     clip_focus: bool,
     clip_focus_anim: Tween,
+    /// Which window shows the settings panel: the one Ctrl+S was pressed in.
+    settings_screen: Screen,
+    /// Lyrics on screen (0 -> 1): in when there is something to sing, out
+    /// for the intro, the outro, long breaks and while they load.
+    lyrics_shown: Tween,
+    /// The lyrics last on screen and where in the song, kept to fade out
+    /// when the song changes.
+    lyrics_seen: Option<(Arc<Enrichment>, Duration)>,
+    /// The last song's lyrics fading out, frozen where they were, how visible
+    /// they were and since when.
+    outgoing: Option<(Arc<Enrichment>, Duration, f32, Instant)>,
+    /// The song on screen, and the one before it while its titles fade out.
+    track: Option<NowPlaying>,
+    previous_track: Option<(NowPlaying, Instant)>,
+    transport: Transport,
+    mirror_transport: Transport,
+}
+
+/// The windows that take keys and clicks.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Screen {
+    Main,
+    /// The second screen of Ctrl+D.
+    Mirror,
 }
 
 /// Screensaver: input right after start is the window settling, not the user.
@@ -274,7 +304,7 @@ impl VisualApp {
         } else {
             Vec::new()
         };
-        let update = (mode == Mode::Window).then(|| {
+        let update = (mode == Mode::Window && !update::packaged()).then(|| {
             let update = SharedUpdate::default();
             update::check_in_background(Arc::clone(&update));
             update
@@ -316,6 +346,14 @@ impl VisualApp {
             clip: None,
             clip_focus: false,
             clip_focus_anim: Tween::new(FOCUS_OPEN, FOCUS_CLOSE),
+            settings_screen: Screen::Main,
+            lyrics_shown: Tween::new(LYRICS_IN, LYRICS_OUT),
+            lyrics_seen: None,
+            outgoing: None,
+            track: None,
+            previous_track: None,
+            transport: Transport::default(),
+            mirror_transport: Transport::default(),
         }
     }
 
@@ -432,6 +470,7 @@ impl eframe::App for VisualApp {
         if !self.mirror_on && mirror == 0.0 {
             self.mirror = None;
             self.mirror_frames = 0;
+            self.settings_screen = Screen::Main;
         }
         // With a second screen the content is split: cover and titles here,
         // lyrics over there.
@@ -448,7 +487,7 @@ impl eframe::App for VisualApp {
         self.lyrics_focus_anim.set(self.lyrics_focus);
         let focus = self.lyrics_focus_anim.progress();
         self.settings_anim.set(self.settings_open);
-        let panel = self.settings_anim.progress();
+        let panel = self.panel_on(Screen::Main);
         // Behind the glass panel only the soft background shows: the sharp
         // cover, titles and lyrics fade back, so the pane reads as frosted.
         ui.scope(|ui| {
@@ -468,38 +507,13 @@ impl eframe::App for VisualApp {
             self.show_screen(&ctx, slot, &frame);
         }
         self.volume.update(frame.now_playing.as_ref());
-        if panel == 0.0 {
-            self.volume
-                .draw(&ctx, ui.max_rect(), color(frame.palette[0]));
-        }
-        if panel > 0.0 {
-            // Dim the visuals a little so the panel reads well.
-            ui.painter().rect_filled(
-                ui.max_rect(),
-                0.0,
-                Color32::from_black_alpha((70.0 * ease_out_cubic(panel)) as u8),
-            );
-            let first_run = !self.settings.lock().unwrap().setup_done;
-            let keep_open = setup::show(
-                &ctx,
-                panel,
-                self.settings_open,
-                &self.settings,
-                first_run,
-                &frame.devices,
-                frame.audio.as_ref(),
-                self.update.as_ref(),
-            );
-            if !keep_open && self.settings_open {
-                self.close_settings();
-            }
-        }
+        self.draw_overlays(ui, Screen::Main, &frame, panel);
         // Opened from the screensaver dialog: done once the settings close.
-        if self.mode == Mode::Configure && !self.settings_open && panel == 0.0 {
+        if self.mode == Mode::Configure && !self.settings_open && self.settings_anim.progress() == 0.0 {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         if let Some(bar) = &mut self.title_bar {
-            bar.show(&ctx, self.settings_open);
+            bar.show(&ctx, self.settings_open && self.settings_screen == Screen::Main);
         }
         self.draw_toast(&ctx);
         ctx.request_repaint();
@@ -559,6 +573,12 @@ struct FrameData {
     clip: Option<ClipFrame>,
     time: f32,
     flow: f32,
+    /// How far the lyrics are on screen (0 -> 1), see `VisualApp::lyrics_shown`.
+    lyrics: f32,
+    /// The last song's lyrics fading out: where they stopped and how visible they are.
+    outgoing: Option<(Arc<Enrichment>, Duration, f32)>,
+    /// The last song, its titles fading out as the new ones come (0 -> 1).
+    previous_track: Option<(NowPlaying, f32)>,
 }
 
 impl VisualApp {
@@ -622,10 +642,40 @@ impl VisualApp {
             fade,
         );
 
+        let idle = now_playing
+            .as_ref()
+            .is_none_or(|np| np.state == PlaybackState::Stopped);
+        self.follow_track(now_playing.as_ref(), idle);
+        // Without a position the lyrics are whole lines, always worth showing.
+        let singing = enrichment.as_ref().filter(|e| {
+            e.lyrics.as_ref().is_some_and(|l| {
+                !l.synced.is_empty() && !idle && position.is_none_or(|p| l.sung_near(p))
+            })
+        });
+        self.lyrics_shown.set(singing.is_some());
+        if let Some(e) = singing {
+            self.lyrics_seen = Some((Arc::clone(e), position.unwrap_or_default()));
+        }
+        let outgoing = self.outgoing.as_ref().and_then(|(e, at, alpha, since)| {
+            let t = since.elapsed().as_secs_f32() / LYRICS_OUT.as_secs_f32();
+            (t < 1.0).then(|| (Arc::clone(e), *at, alpha * (1.0 - ease_out_cubic(t))))
+        });
+        if outgoing.is_none() {
+            self.outgoing = None;
+        }
+        let previous_track = self.previous_track.as_ref().and_then(|(np, since)| {
+            let t = since.elapsed().as_secs_f32() / TRACK_FADE.as_secs_f32();
+            (t < 1.0).then(|| (np.clone(), t))
+        });
+        if previous_track.is_none() {
+            self.previous_track = None;
+        }
+
         FrameData {
-            idle: now_playing
-                .as_ref()
-                .is_none_or(|np| np.state == PlaybackState::Stopped),
+            idle,
+            lyrics: self.lyrics_shown.progress(),
+            outgoing,
+            previous_track,
             palette,
             lyrics_style,
             clip_screen,
@@ -642,6 +692,35 @@ impl VisualApp {
             time,
             flow: self.flow,
         }
+    }
+
+    /// Notices a new song: the last one's titles and lyrics fade out from
+    /// where they were, instead of the screen cutting to the new one.
+    fn follow_track(&mut self, now_playing: Option<&NowPlaying>, idle: bool) {
+        let now_playing = now_playing.filter(|_| !idle);
+        let same = |a: &NowPlaying, b: &NowPlaying| {
+            a.track.title == b.track.title && a.track.artist == b.track.artist
+        };
+        let changed = match (&self.track, now_playing) {
+            (Some(old), Some(new)) => !same(old, new),
+            (old, new) => old.is_some() != new.is_some(),
+        };
+        if changed {
+            self.previous_track = self
+                .track
+                .take()
+                .filter(|_| now_playing.is_some())
+                .map(|np| (np, Instant::now()));
+            let shown = self.lyrics_shown.progress();
+            self.outgoing = self
+                .lyrics_seen
+                .take()
+                .filter(|_| shown > 0.01)
+                .map(|(e, at)| (e, at, shown, Instant::now()));
+            // The new song's lyrics come in fresh rather than taking over the old fade.
+            self.lyrics_shown = Tween::new(LYRICS_IN, LYRICS_OUT);
+        }
+        self.track = now_playing.cloned();
     }
 
     /// Opens, follows and closes the music video for the song playing: its
@@ -750,13 +829,14 @@ impl VisualApp {
                 .map_or(-1.0, |i| i as f32);
             self.lyric_scroll.position(&np.track.title, line)
         });
-        // Lyrics fade in when they arrive, e.g. after a song change.
-        let ready = ui.ctx().animate_bool_with_time(
-            egui::Id::new("ozbeat-lyrics-ready"),
-            synced.is_some(),
-            LYRICS_READY,
-        );
+        // Lyrics fade in when they arrive and out when nothing is left to sing.
+        let ready = if synced.is_some() { f.lyrics } else { 0.0 };
         let accent = color(f.palette[0]);
+        let outgoing = f.outgoing.as_ref().and_then(|(e, at, alpha)| {
+            let lyrics = e.lyrics.as_ref()?;
+            let line = lyrics.line_at(*at).map_or(-1.0, |i| i as f32);
+            Some((lyrics, *at, line, *alpha))
+        });
 
         match content {
             Content::Main {
@@ -765,15 +845,31 @@ impl VisualApp {
                 gone,
                 focus,
             } => {
-                // Without lyrics below, the cover block grows into the middle.
-                let center = egui::emath::lerp(0.40..=0.5, split);
-                let layout = Layout::new(rect, center, split);
+                // Without lyrics below (on the other screen, or none to sing
+                // right now) the cover block grows into the middle.
+                let settle = split.max(1.0 - ready);
+                let center = egui::emath::lerp(0.40..=0.5, settle);
+                let layout = Layout::new(rect, center, settle);
                 let focus = ease_in_out_cubic(focus);
                 if focus < 1.0 && video < 1.0 {
                     ui.scope(|ui| {
                         ui.multiply_opacity((1.0 - focus) * (1.0 - video));
                         self.draw_cover(ui, &layout, f.pulse);
-                        self.draw_titles(ui, &layout, np, f.position, accent, split);
+                        // A new song's titles rise in as the last one's rise away.
+                        let rise = layout.title_size * 0.5;
+                        let incoming = f.previous_track.as_ref().map_or(1.0, |(_, t)| ease_out_cubic(*t));
+                        if let Some((prev, _)) = &f.previous_track {
+                            let shift = TSTransform::from_translation(Vec2::new(0.0, -rise * incoming));
+                            ui.with_visual_transform(shift, |ui| {
+                                ui.multiply_opacity(1.0 - incoming);
+                                self.draw_titles(ui, &layout, prev, None, accent, settle);
+                            });
+                        }
+                        let shift = TSTransform::from_translation(Vec2::new(0.0, rise * (1.0 - incoming)));
+                        ui.with_visual_transform(shift, |ui| {
+                            ui.multiply_opacity(incoming);
+                            self.draw_titles(ui, &layout, np, f.position, accent, settle);
+                        });
                     });
                 }
                 if video > 0.0 && focus < 1.0 {
@@ -788,9 +884,13 @@ impl VisualApp {
                     painter.multiply_opacity(focus * (1.0 - ready));
                     draw_caption(&painter, rect, np);
                 }
-                if let (false, Some(lyrics), Some(scroll)) = (gone, synced, scroll) {
+                if let (false, Some((lyrics, at, line, alpha))) = (gone, outgoing) {
                     let (center_y, size) = lyrics_placement(rect, focus);
-                    draw_lyrics_shade(&painter, rect, f, lyrics, center_y, size, video * ready);
+                    draw_outgoing(ui, rect, f, video, lyrics, at, line, center_y, size, alpha);
+                }
+                if let (false, Some(lyrics), Some(scroll), true) = (gone, synced, scroll, ready > 0.0) {
+                    let (center_y, size) = lyrics_placement(rect, focus);
+                    draw_lyrics_shade(&painter, rect, f, center_y, size, video * ready);
                     let draw = |ui: &mut egui::Ui| {
                         if focus > 0.0 && focus < 1.0 {
                             // Growing: laid out once at the full size and scaled,
@@ -801,12 +901,12 @@ impl VisualApp {
                                 let mut painter = ui.painter().clone();
                                 painter.multiply_opacity(ready);
                                 let y = rect.center().y;
-                                draw_timed_lyrics(&painter, rect, f, video, lyrics, scroll, y, big);
+                                draw_timed_lyrics(&painter, rect, f, f.position, video, lyrics, scroll, y, big);
                             });
                         } else {
                             let mut painter = ui.painter().clone();
                             painter.multiply_opacity(ready);
-                            draw_timed_lyrics(&painter, rect, f, video, lyrics, scroll, center_y, size);
+                            draw_timed_lyrics(&painter, rect, f, f.position, video, lyrics, scroll, center_y, size);
                         }
                     };
                     match leaving {
@@ -836,20 +936,34 @@ impl VisualApp {
                 let big = big_lyrics_size(rect);
                 let scale = egui::emath::lerp(1.0..=main_lyrics_size(rect) / big, clip_focus);
                 let center_y = egui::emath::lerp(rect.center().y..=main_lyrics_y(rect), clip_focus);
-                if let Some(lyrics) = synced {
-                    draw_lyrics_shade(&painter, rect, f, lyrics, center_y, big * scale, video * ready);
-                }
+                let leaving = outgoing.map_or(0.0, |o| o.3);
+                draw_lyrics_shade(&painter, rect, f, center_y, big * scale, video * ready.max(leaving));
                 let draw = |ui: &mut egui::Ui| {
                     let transform = scaled_about(rect.center(), center_y, scale);
                     ui.with_visual_transform(transform, |ui| {
-                        let painter = ui.painter();
-                        match (synced, scroll) {
-                            (Some(lyrics), Some(scroll)) => {
-                                let y = rect.center().y;
-                                draw_timed_lyrics(painter, rect, f, video, lyrics, scroll, y, big);
+                        let y = rect.center().y;
+                        if let Some((lyrics, at, line, alpha)) = outgoing {
+                            draw_outgoing(ui, rect, f, video, lyrics, at, line, y, big, alpha);
+                        }
+                        if let (Some(lyrics), Some(scroll), true) = (synced, scroll, ready > 0.0) {
+                            let mut painter = ui.painter().clone();
+                            painter.multiply_opacity(ready);
+                            draw_timed_lyrics(&painter, rect, f, f.position, video, lyrics, scroll, y, big);
+                        }
+                        // Nothing to sing: show what plays rather than an empty
+                        // screen, once the last song's lyrics have given way.
+                        let caption = (1.0 - ready) * (1.0 - leaving);
+                        if caption > 0.0 {
+                            let mut painter = ui.painter().clone();
+                            painter.multiply_opacity(caption);
+                            let incoming = f.previous_track.as_ref().map_or(1.0, |(_, t)| ease_out_cubic(*t));
+                            if let Some((prev, _)) = &f.previous_track {
+                                let mut painter = painter.clone();
+                                painter.multiply_opacity(1.0 - incoming);
+                                draw_caption(&painter, rect, prev);
                             }
-                            // No timed lyrics: show what plays rather than an empty screen.
-                            _ => draw_caption(painter, rect, np),
+                            painter.multiply_opacity(incoming);
+                            draw_caption(&painter, rect, np);
                         }
                     });
                 };
@@ -862,33 +976,16 @@ impl VisualApp {
         // Big in the middle, the cover has its own progress under the titles.
         let mut bar = painter.clone();
         if let Content::Main { split, .. } = content {
-            bar.multiply_opacity(1.0 - split);
+            bar.multiply_opacity(1.0 - split.max(1.0 - ready));
         }
         draw_progress(&bar, rect, np, f.position, accent);
     }
 
     fn handle_keys(&mut self, ctx: &egui::Context) {
-        let (settings_key, mirror_key, escape) = ctx.input(|i| {
-            (
-                i.modifiers.command && i.key_pressed(egui::Key::S),
-                i.modifiers.command && i.key_pressed(egui::Key::D),
-                i.key_pressed(egui::Key::Escape),
-            )
-        });
-        if settings_key {
-            if self.settings_open {
-                self.close_settings();
-            } else {
-                self.settings_open = true;
-            }
-        }
-        if mirror_key {
-            self.toggle_mirror(ctx);
-        }
-        self.handle_playback_keys(ctx);
+        let escape = self.handle_shortcuts(ctx, Screen::Main);
         // Esc closes the panel first, then the big lyrics; only then does it
         // leave fullscreen.
-        if escape && self.settings_open {
+        if escape && self.settings_open && self.settings_screen == Screen::Main {
             self.close_settings();
             return;
         }
@@ -896,40 +993,104 @@ impl VisualApp {
             self.lyrics_focus = false;
             return;
         }
-        // The title bar has its own double-click (maximize).
+        // The title bar has its own double-click (maximize), and so many
+        // quick clicks on the buttons are no double-click.
         let on_bar = self
             .title_bar
             .as_ref()
             .is_some_and(|bar| bar.under_pointer(ctx));
-        self.handle_fullscreen(ctx, !self.settings_open && !on_bar);
+        let on_buttons = self.transport.under_pointer(ctx);
+        let settings_here = self.settings_open && self.settings_screen == Screen::Main;
+        self.handle_fullscreen(ctx, !settings_here && !on_bar && !on_buttons);
     }
 
-    /// Ctrl+Up/Down turns what plays louder or quieter, Ctrl+Space pauses
-    /// and resumes it.
-    fn handle_playback_keys(&mut self, ctx: &egui::Context) {
-        if ctx.egui_wants_keyboard_input() {
-            return; // typing in a settings field
-        }
-        let (up, down, space) = ctx.input(|i| {
-            let ctrl = i.modifiers.command;
+    /// The keys that work the same in every window: Ctrl+S opens the settings
+    /// there, Ctrl+D, Ctrl+L and the playback keys. Returns whether Esc was
+    /// pressed, which each window handles its own way.
+    fn handle_shortcuts(&mut self, ctx: &egui::Context, screen: Screen) -> bool {
+        let (settings_key, mirror_key, style_key, escape) = ctx.input(|i| {
             (
-                ctrl && i.key_pressed(egui::Key::ArrowUp),
-                ctrl && i.key_pressed(egui::Key::ArrowDown),
-                ctrl && i.key_pressed(egui::Key::Space),
+                i.modifiers.command && i.key_pressed(egui::Key::S),
+                i.modifiers.command && i.key_pressed(egui::Key::D),
+                i.modifiers.command && i.key_pressed(egui::Key::L),
+                i.key_pressed(egui::Key::Escape),
             )
         });
-        if !(up || down || space) {
-            return;
+        if style_key {
+            let style = {
+                let mut s = self.settings.lock().unwrap();
+                s.lyrics = match s.lyrics {
+                    LyricsStyle::Words => LyricsStyle::Drum,
+                    LyricsStyle::Drum => LyricsStyle::Lens,
+                    LyricsStyle::Lens => LyricsStyle::Words,
+                };
+                s.save();
+                s.lyrics
+            };
+            self.show_toast(match style {
+                LyricsStyle::Words => "Texty po slovech",
+                LyricsStyle::Drum => "Texty na válci",
+                LyricsStyle::Lens => "Texty pod čočkou",
+            });
         }
+        if settings_key {
+            if !self.settings_open {
+                self.settings_open = true;
+                self.settings_screen = screen;
+            } else if self.settings_screen != screen {
+                // Open on the other screen: bring it over here.
+                self.settings_screen = screen;
+            } else {
+                self.close_settings();
+            }
+        }
+        if mirror_key {
+            self.toggle_mirror(ctx);
+        }
+        self.handle_playback_keys(ctx);
+        escape
+    }
+
+    /// Ctrl+Up/Down turns what plays louder or quieter, Ctrl+Left/Right skips
+    /// back or ahead, Ctrl+Space pauses
+    /// and resumes it.
+    fn handle_playback_keys(&mut self, ctx: &egui::Context) {
+        if ctx.egui_wants_keyboard_input() || !self.settings.lock().unwrap().playback_keys {
+            return; // typing in a settings field, or switched off
+        }
+        let press = ctx.input(|i| {
+            let ctrl = i.modifiers.command;
+            [
+                (egui::Key::Space, Press::PlayPause),
+                (egui::Key::ArrowUp, Press::Louder),
+                (egui::Key::ArrowDown, Press::Quieter),
+                (egui::Key::ArrowRight, Press::Next),
+                (egui::Key::ArrowLeft, Press::Previous),
+            ]
+            .into_iter()
+            .find(|(key, _)| ctrl && i.key_pressed(*key))
+            .map(|(_, press)| press)
+        });
+        let Some(press) = press else {
+            return;
+        };
+        self.playback(press);
+    }
+
+    /// Pauses or turns what plays louder or quieter, from a key or a button.
+    fn playback(&mut self, press: Press) {
         let (source, now_playing) = {
             let scene = self.scene.lock().unwrap();
             (scene.source.clone(), scene.now_playing.clone())
         };
-        let done = if space {
-            self.control.play_pause(source.as_ref())
-        } else {
-            self.control
-                .step_volume(source.as_ref(), now_playing.as_ref(), up)
+        let done = match press {
+            Press::PlayPause => self.control.play_pause(source.as_ref()),
+            Press::Next | Press::Previous => self.control.skip(source.as_ref(), press == Press::Next),
+            Press::Louder | Press::Quieter => self.control.step_volume(
+                source.as_ref(),
+                now_playing.as_ref(),
+                press == Press::Louder,
+            ),
         };
         if !done {
             self.show_toast(if source.is_none() {
@@ -987,7 +1148,7 @@ impl VisualApp {
             .title_bar
             .as_ref()
             .is_some_and(|bar| bar.under_pointer(ctx));
-        if self.settings_open || on_bar {
+        if self.settings_open || on_bar || self.transport.under_pointer(ctx) {
             return;
         }
         let band = lyrics_band(rect, self.lyrics_focus_anim.progress());
@@ -1092,11 +1253,23 @@ impl VisualApp {
                     arriving: beam::arriving(rect, self.mirror_dir, shown),
                     clip_focus: self.clip_focus_anim.progress(),
                 };
-                self.draw_visual(ui, frame, content);
+                let panel = self.panel_on(Screen::Mirror);
+                ui.scope(|ui| {
+                    ui.multiply_opacity(1.0 - 0.95 * ease_out_cubic(panel));
+                    self.draw_visual(ui, frame, content);
+                });
                 let accent = color(frame.palette[0]);
                 beam::draw_wipe(ui.painter(), rect, self.mirror_dir, shown, accent);
+                let ctx = ui.ctx().clone();
+                let escape = self.handle_shortcuts(&ctx, Screen::Mirror);
+                let settings_here = self.settings_open && self.settings_screen == Screen::Mirror;
+                self.draw_overlays(ui, Screen::Mirror, frame, panel);
                 // A click swaps which is big, the video or the lyrics.
-                if frame.clip.is_some() && self.settings.lock().unwrap().clip_screen != ClipScreen::Main {
+                if frame.clip.is_some()
+                    && !settings_here
+                    && !self.mirror_transport.under_pointer(&ctx)
+                    && self.settings.lock().unwrap().clip_screen != ClipScreen::Main
+                {
                     if ui.input(|i| i.pointer.hover_pos().is_some()) {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                     }
@@ -1110,11 +1283,11 @@ impl VisualApp {
                     ui.ctx()
                         .send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 }
-                close = close_requested
-                    || ui.input(|i| {
-                        i.key_pressed(egui::Key::Escape)
-                            || (i.modifiers.command && i.key_pressed(egui::Key::D))
-                    });
+                // Esc closes the panel here first, then the second screen.
+                if escape && settings_here {
+                    self.close_settings();
+                }
+                close = close_requested || (escape && !settings_here);
             },
         );
         self.mirror_frames = self.mirror_frames.saturating_add(1);
@@ -1159,6 +1332,66 @@ impl VisualApp {
         );
         if wake {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+
+    /// How far the settings panel is open in `screen`'s window (0 -> 1).
+    fn panel_on(&self, screen: Screen) -> f32 {
+        if self.settings_screen == screen {
+            self.settings_anim.progress()
+        } else {
+            0.0
+        }
+    }
+
+    /// What goes over the visuals in `screen`'s window: the settings panel
+    /// (`panel` open), or else the volume hint, and the playback buttons.
+    fn draw_overlays(&mut self, ui: &egui::Ui, screen: Screen, f: &FrameData, panel: f32) {
+        let ctx = ui.ctx().clone();
+        let rect = ui.max_rect();
+        let accent = color(f.palette[0]);
+        let buttons = self.mode == Mode::Window
+            && !f.idle
+            && panel == 0.0
+            && self.settings.lock().unwrap().buttons;
+        let paused = f
+            .now_playing
+            .as_ref()
+            .is_some_and(|np| np.state == PlaybackState::Paused);
+        let transport = match screen {
+            Screen::Main => &mut self.transport,
+            Screen::Mirror => &mut self.mirror_transport,
+        };
+        if let Some(press) = transport.show(&ctx, rect, accent, paused, buttons) {
+            self.playback(press);
+        }
+        if panel == 0.0 {
+            self.volume.draw(&ctx, rect, accent);
+        } else {
+            // Dim the visuals a little so the panel reads well.
+            ui.painter().rect_filled(
+                rect,
+                0.0,
+                Color32::from_black_alpha((70.0 * ease_out_cubic(panel)) as u8),
+            );
+            let first_run = !self.settings.lock().unwrap().setup_done;
+            let keep_open = setup::show(
+                &ctx,
+                panel,
+                self.settings_open,
+                &self.settings,
+                first_run,
+                &f.devices,
+                f.audio.as_ref(),
+                self.update.as_ref(),
+            );
+            if !keep_open && self.settings_open {
+                self.close_settings();
+            }
+        }
+        if screen == Screen::Mirror {
+            // The main window draws its own toast last, over the title bar.
+            self.draw_toast(&ctx);
         }
     }
 
@@ -1587,7 +1820,6 @@ fn draw_lyrics_shade(
     painter: &egui::Painter,
     rect: Rect,
     f: &FrameData,
-    lyrics: &mv_enrich::Lyrics,
     center_y: f32,
     size: f32,
     video: f32,
@@ -1595,37 +1827,62 @@ fn draw_lyrics_shade(
     if video <= 0.0 {
         return;
     }
-    let reach = if shows_words(f, lyrics) {
-        size * WORD_SCALE * 1.7
-    } else {
-        size * 2.4
+    let reach = match (f.position, f.lyrics_style) {
+        (None, _) => size * 2.4,
+        (Some(_), LyricsStyle::Words | LyricsStyle::Lens) => size * WORD_SCALE * 1.7,
+        (Some(_), LyricsStyle::Drum) => size * DRUM_SCALE * 3.2,
     };
     draw_band(painter, rect, center_y, reach, 175.0 * video);
 }
 
-fn shows_words(f: &FrameData, lyrics: &mv_enrich::Lyrics) -> bool {
-    f.lyrics_style == LyricsStyle::Words && !lyrics.estimated
-}
-
-/// The lyrics in the chosen style; whole lines when the timing is only a
-/// guess from plain lyrics. Over a music video (`video`) the words turn white.
+/// The lyrics in the chosen style, also when their timing is only a guess
+/// from plain lyrics; whole lines when the player doesn't say where in the
+/// song it is. Over a music video (`video`) the words turn white.
 #[allow(clippy::too_many_arguments)]
 fn draw_timed_lyrics(
     painter: &egui::Painter,
     rect: Rect,
     f: &FrameData,
+    position: Option<Duration>,
     video: f32,
     lyrics: &mv_enrich::Lyrics,
     scroll: f32,
     center_y: f32,
     size: f32,
 ) {
-    match f.position {
-        Some(position) if shows_words(f, lyrics) => {
-            draw_words(painter, rect, lyrics, position, center_y, size, f.palette[0], video);
-        }
-        _ => draw_lyrics(painter, rect, lyrics, f.position, scroll, center_y, size),
+    let Some(position) = position else {
+        draw_lyrics(painter, rect, lyrics, None, scroll, center_y, size);
+        return;
+    };
+    let vivid = f.palette[0];
+    match f.lyrics_style {
+        LyricsStyle::Words => draw_words(painter, rect, lyrics, position, center_y, size, vivid, video, None),
+        LyricsStyle::Drum => draw_drum(painter, rect, lyrics, position, center_y, size, vivid, video),
+        LyricsStyle::Lens => draw_lens(painter, rect, lyrics, position, center_y, size, vivid, video),
     }
+}
+
+/// The last song's lyrics, frozen where they stopped (`at`, on `line`),
+/// drifting up and away at `alpha` as the new song begins.
+#[allow(clippy::too_many_arguments)]
+fn draw_outgoing(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    f: &FrameData,
+    video: f32,
+    lyrics: &mv_enrich::Lyrics,
+    at: Duration,
+    line: f32,
+    center_y: f32,
+    size: f32,
+    alpha: f32,
+) {
+    let lift = TSTransform::from_translation(Vec2::new(0.0, -size * 1.5 * (1.0 - alpha)));
+    ui.with_visual_transform(lift, |ui| {
+        let mut painter = ui.painter().clone();
+        painter.multiply_opacity(alpha);
+        draw_timed_lyrics(&painter, rect, f, Some(at), video, lyrics, line, center_y, size);
+    });
 }
 
 /// Black across `rect`, `alpha` at `center_y` and fading out `reach` above and below.
@@ -1672,7 +1929,8 @@ const WORD_BOX: &[(f32, f32)] = &[(-0.75, 0.0), (0.0, 1.0), (0.15, 1.0), (0.6, 0
 /// tilt each and the icon of what they name. They are laid out at two sizes
 /// and drawn as scaled meshes, so they grow smoothly without filling the
 /// glyph atlas with a font size per frame. Over a music video (`video`) the
-/// words turn white with a dark rim instead of the cover's tone.
+/// words turn white with a dark rim instead of the cover's tone. Everything
+/// drawn goes through `bend`, if given, with glyphs cut finer to curve.
 #[allow(clippy::too_many_arguments)]
 fn draw_words(
     painter: &egui::Painter,
@@ -1683,6 +1941,7 @@ fn draw_words(
     size: f32,
     vivid: [f32; 3],
     video: f32,
+    bend: Option<&dyn Fn(Pos2) -> Pos2>,
 ) {
     struct Word {
         text: String,
@@ -1693,8 +1952,7 @@ fn draw_words(
     let first = lyrics.line_at(position).map_or(0, |i| i.saturating_sub(1));
     let mut words = Vec::new();
     for (i, line) in lyrics.synced.iter().enumerate().skip(first).take(4) {
-        let next = lyrics.synced.get(i + 1).map(|l| l.at);
-        for (k, (range, at)) in line.word_starts(next).into_iter().enumerate() {
+        for (k, (range, at)) in lyrics.word_starts(i).into_iter().enumerate() {
             words.push(Word {
                 text: line.text.chars().skip(range.start).take(range.len()).collect(),
                 at,
@@ -1717,6 +1975,8 @@ fn draw_words(
     // Rasters snapped to 4 px steps, so a resized window doesn't keep adding sizes.
     let big = ((size * WORD_SCALE / 4.0).round() * 4.0).max(16.0);
     let small = big * 0.6;
+    // A bend swells the middle, so its words are laid out bigger to stay sharp.
+    let sharpen = if bend.is_some() { 1.6 } else { 1.0 };
     // Set tight, like display type.
     let layout = |text: &str, px: f32| {
         let format = TextFormat {
@@ -1752,12 +2012,13 @@ fn draw_words(
             continue;
         }
         let px = big * curve(WORD_SIZE, d);
-        let raster = if px <= small * 1.05 { small } else { big };
+        let raster = if px <= small * 1.05 { small } else { big } * sharpen;
         let galley = layout(&word.text, raster);
         // Long words shrink to fit the width at their biggest.
         let fit = (max_width / (galley.size().x * big / raster)).min(1.0);
         let scale = px / raster * fit;
-        let icon = icons::for_word(&word.text).map(|icon| {
+        // Beside a word under a bend, an icon would be crushed at the rim.
+        let icon = icons::for_word(&word.text).filter(|_| bend.is_none()).map(|icon| {
             let galley = painter.layout_no_wrap(icon.to_string(), icon_font(raster), Color32::WHITE);
             // Pops in with a little overshoot as its word is sung.
             let pop = spring(remap(-d, -0.6, 0.6));
@@ -1782,6 +2043,14 @@ fn draw_words(
 
     // UVs are in texels of the font atlas, read once everything is laid out.
     let atlas = Vec2::from(painter.fonts(|f| f.font_image_size()).map(|v| v as f32));
+    let glyphs = |mesh: &mut Mesh, galley: &Galley, at: Pos2, scale: f32, angle: f32, color: Color32| match bend {
+        Some(bend) => {
+            let turn = Rot2::from_angle(angle);
+            let middle = galley.size() / 2.0;
+            warped_mesh(mesh, galley, atlas, |v| bend(at + turn * ((v - middle) * scale)), color, 4);
+        }
+        None => galley_mesh(mesh, galley, atlas, at, scale, angle, color),
+    };
     for word in placed {
         let turn = Rot2::from_angle(word.angle);
         let place = |v: Vec2| word.center + turn * (v * word.scale);
@@ -1795,12 +2064,17 @@ fn draw_words(
                 .fold(Rect::NOTHING, Rect::union);
             let pad = Vec2::new(0.1, 0.05) * word.galley.size().y;
             let ink = ink.expand2(pad).translate(-half);
-            let corners = [ink.left_top(), ink.right_top(), ink.right_bottom(), ink.left_bottom()];
-            painter.add(Shape::convex_polygon(
-                corners.map(|c| place(c.to_vec2())).to_vec(),
-                box_color.gamma_multiply(word.alpha * word.highlight),
-                Stroke::NONE,
-            ));
+            let fill = box_color.gamma_multiply(word.alpha * word.highlight);
+            if let Some(bend) = bend {
+                painter.add(bent_rect(ink, |v| bend(place(v)), fill));
+            } else {
+                let corners = [ink.left_top(), ink.right_top(), ink.right_bottom(), ink.left_bottom()];
+                painter.add(Shape::convex_polygon(
+                    corners.map(|c| place(c.to_vec2())).to_vec(),
+                    fill,
+                    Stroke::NONE,
+                ));
+            }
         }
         let icon = word.icon.filter(|i| i.2 > 0.0).map(|(icon, side, pop)| {
             let gap = 0.25 * word.galley.size().y;
@@ -1816,10 +2090,10 @@ fn draw_words(
             for k in 0..8 {
                 let offset = Vec2::angled(k as f32 * TAU / 8.0) * radius;
                 let at = place(Vec2::ZERO) + offset;
-                galley_mesh(&mut shadow, &word.galley, atlas, at, word.scale, word.angle, shade);
+                glyphs(&mut shadow, &word.galley, at, word.scale, word.angle, shade);
                 if let Some((icon, at_icon, pop)) = &icon {
                     let at = *at_icon + offset;
-                    galley_mesh(&mut shadow, icon, atlas, at, word.scale * pop, word.angle, shade);
+                    glyphs(&mut shadow, icon, at, word.scale * pop, word.angle, shade);
                 }
             }
             painter.add(Shape::mesh(shadow));
@@ -1827,13 +2101,316 @@ fn draw_words(
         // Light text on its highlight, the cover's tone once it's big.
         let color = lerp_color(text_color, Color32::WHITE, word.highlight).gamma_multiply(word.alpha);
         let mut mesh = Mesh::default();
-        galley_mesh(&mut mesh, &word.galley, atlas, place(Vec2::ZERO), word.scale, word.angle, color);
+        glyphs(&mut mesh, &word.galley, place(Vec2::ZERO), word.scale, word.angle, color);
         if let Some((icon, at, pop)) = icon {
             let tint = lerp_color(lerp_color(text_color, box_color, 0.5), Color32::WHITE, video * 0.5);
             let color = tint.gamma_multiply(word.alpha * pop.min(1.0));
-            galley_mesh(&mut mesh, &icon, atlas, at, word.scale * pop, word.angle, color);
+            glyphs(&mut mesh, &icon, at, word.scale * pop, word.angle, color);
         }
         painter.add(Shape::mesh(mesh));
+    }
+}
+
+/// Size of the line on the front of the drum, against the lines' size.
+const DRUM_SCALE: f32 = 1.35;
+/// Turn of the drum from one line to the next, in radians.
+const DRUM_STEP: f32 = 0.42;
+/// How long the lyrics take to move on to the next line, unless it comes sooner.
+const LINE_TURN: f32 = 0.45;
+
+/// How far the lyrics have moved on, in lines, `now` being the line sung:
+/// easing from the line before to it as it starts.
+fn line_scroll(lyrics: &mv_enrich::Lyrics, now: usize, position: Duration) -> f32 {
+    let line_start = lyrics.synced[now].at;
+    let since = (position - line_start).as_secs_f32();
+    let turn = lyrics.synced.get(now + 1).map_or(LINE_TURN, |next| {
+        (next.at - line_start).as_secs_f32().min(LINE_TURN)
+    });
+    now as f32 - 1.0 + ease_out_cubic((since / turn.max(0.05)).min(1.0))
+}
+
+/// A word of a line laid out in a row, or the icon after it.
+struct Piece {
+    galley: Arc<Galley>,
+    /// Where it starts along the row.
+    x: f32,
+    word: usize,
+    icon: bool,
+}
+
+/// Line `i`'s words and their icons laid out in a row, and the row's width.
+fn line_pieces(
+    painter: &egui::Painter,
+    lyrics: &mv_enrich::Lyrics,
+    i: usize,
+    font: &FontId,
+    icon_font: &FontId,
+) -> (Vec<Piece>, f32) {
+    let text = &lyrics.synced[i].text;
+    let space = painter.layout_no_wrap(" ".into(), font.clone(), Color32::WHITE).size().x;
+    let mut pieces = Vec::new();
+    let mut x = 0.0;
+    for (k, (range, _)) in lyrics.word_starts(i).into_iter().enumerate() {
+        let word: String = text.chars().skip(range.start).take(range.len()).collect();
+        let galley = painter.layout_no_wrap(word.clone(), font.clone(), Color32::WHITE);
+        let width = galley.size().x;
+        pieces.push(Piece { galley, x, word: k, icon: false });
+        x += width;
+        if let Some(icon) = icons::for_word(&word) {
+            let galley = painter.layout_no_wrap(icon.to_string(), icon_font.clone(), Color32::WHITE);
+            x += space * 0.5;
+            let width = galley.size().x;
+            pieces.push(Piece { galley, x, word: k, icon: true });
+            x += width;
+        }
+        x += space;
+    }
+    (pieces, (x - space).max(1.0))
+}
+
+/// Color, highlight and brightness of word `k` of a line. On the line being
+/// sung (`front`) `sung` of its words have started, the latest `since`
+/// seconds ago; other lines are either `past` or still to come.
+fn word_look(
+    front: bool,
+    past: bool,
+    k: usize,
+    sung: usize,
+    since: Option<f32>,
+    text_color: Color32,
+) -> (Color32, f32, f32) {
+    if !front {
+        return if past {
+            (text_color, 0.0, 0.55)
+        } else {
+            (Color32::WHITE, 0.0, 0.35)
+        };
+    }
+    if k + 1 < sung {
+        (text_color, 0.0, 1.0)
+    } else if k + 1 == sung {
+        let pop = since.map_or(1.0, |t| remap(t, 0.0, 0.12));
+        (lerp_color(text_color, Color32::WHITE, pop), pop, 1.0)
+    } else {
+        (Color32::WHITE, 0.0, 0.5)
+    }
+}
+
+/// Lyrics on a turning drum: the lines sit around a cylinder lying across
+/// the screen, the one being sung on its front, big and facing you, and the
+/// others tipping away above and below it in perspective. The words of the
+/// front line light up as they're sung, the current one on a highlight.
+/// Every glyph is projected, so the lines really lean back rather than just
+/// shrink.
+#[allow(clippy::too_many_arguments)]
+fn draw_drum(
+    painter: &egui::Painter,
+    rect: Rect,
+    lyrics: &mv_enrich::Lyrics,
+    position: Duration,
+    center_y: f32,
+    size: f32,
+    vivid: [f32; 3],
+    video: f32,
+) {
+    let Some(now) = lyrics.line_at(position) else {
+        return;
+    };
+    let scroll = line_scroll(lyrics, now, position);
+
+    let px = ((size * DRUM_SCALE / 4.0).round() * 4.0).max(16.0);
+    let radius = px * 3.0;
+    // The camera's distance from the drum's front; nearer bends harder.
+    let eye = radius * 2.6;
+    let (text_color, box_color) = word_colors(vivid);
+    let text_color = lerp_color(text_color, Color32::WHITE, video);
+    let max_width = rect.width() * 0.88;
+    let font = FontId::new(px, FontFamily::Name(HEAVY.into()));
+    let icon_font = FontId::new(px * 0.85, FontFamily::Name(icons::FONT.into()));
+    let atlas = Vec2::from(painter.fonts(|f| f.font_image_size()).map(|v| v as f32));
+
+    let mut shapes = Vec::new();
+    let reach = (std::f32::consts::FRAC_PI_2 / DRUM_STEP).ceil() as usize;
+    for i in now.saturating_sub(reach)..(now + reach + 1).min(lyrics.synced.len()) {
+        let angle = (i as f32 - scroll) * DRUM_STEP;
+        // Lines fade as they turn away, gone before they'd face backward.
+        let alpha = remap(angle.cos(), 0.2, 0.85);
+        if alpha <= 0.0 || lyrics.synced[i].text.trim().is_empty() {
+            continue;
+        }
+        let (pieces, width) = line_pieces(painter, lyrics, i, &font, &icon_font);
+        let fit = (max_width / width).min(1.0);
+
+        let starts = lyrics.word_starts(i);
+        let sung = starts.partition_point(|(_, at)| *at <= position);
+        let since = sung.checked_sub(1).map(|k| (position - starts[k].1).as_secs_f32());
+
+        // A point `local` raster px from the line's middle, on the drum.
+        let project = |local: Vec2| {
+            let a = angle + local.y * fit / radius;
+            let depth = radius * (1.0 - a.cos());
+            let s = eye / (eye + depth);
+            Pos2::new(
+                rect.center().x + local.x * fit * s,
+                center_y + radius * a.sin() * s,
+            )
+        };
+        let mut mesh = Mesh::default();
+        for piece in &pieces {
+            let (color, highlight, dim) = word_look(i == now, i < now, piece.word, sung, since, text_color);
+            let offset = Vec2::new(piece.x - width / 2.0, -piece.galley.size().y / 2.0);
+            if highlight > 0.0 && !piece.icon {
+                let ink = piece
+                    .galley
+                    .rows
+                    .iter()
+                    .map(|r| r.visuals.mesh_bounds.translate(r.pos.to_vec2()))
+                    .fold(Rect::NOTHING, Rect::union);
+                let pad = Vec2::new(0.12, 0.06) * piece.galley.size().y;
+                let ink = ink.expand2(pad).translate(offset);
+                let corners = [ink.left_top(), ink.right_top(), ink.right_bottom(), ink.left_bottom()];
+                shapes.push(Shape::convex_polygon(
+                    corners.map(|c| project(c.to_vec2())).to_vec(),
+                    box_color.gamma_multiply(alpha * highlight),
+                    Stroke::NONE,
+                ));
+            }
+            let tint = if piece.icon {
+                lerp_color(color, box_color, 0.35)
+            } else {
+                color
+            };
+            projected_mesh(&mut mesh, &piece.galley, atlas, |v| project(v + offset), tint.gamma_multiply(alpha * dim));
+        }
+        shapes.push(Shape::mesh(mesh));
+    }
+    painter.extend(shapes);
+}
+
+/// Words under the fisheye are laid out this much smaller, as it swells
+/// them back up in the middle.
+const LENS_SIZE: f32 = 0.82;
+/// How hard the fisheye bends: the middle grows by this over its tanh.
+const LENS_BEND: f32 = 1.9;
+
+/// The word stack of [`draw_words`] seen through a fisheye lens, the way
+/// Verci does it: big and bulging in the middle, words curving and
+/// shrinking as they rise toward the rim.
+#[allow(clippy::too_many_arguments)]
+fn draw_lens(
+    painter: &egui::Painter,
+    rect: Rect,
+    lyrics: &mv_enrich::Lyrics,
+    position: Duration,
+    center_y: f32,
+    size: f32,
+    vivid: [f32; 3],
+    video: f32,
+) {
+    let center = Pos2::new(rect.center().x, center_y);
+    // About the stack's own size, so every word in it curves.
+    let reach = Vec2::splat(size * WORD_SCALE * 1.45);
+    let bend = fisheye(center, reach);
+    draw_words(painter, rect, lyrics, position, center_y, size * LENS_SIZE, vivid, video, Some(&bend));
+}
+
+/// A fisheye centered on `center`: points `reach` away (an ellipse) stay
+/// put, nearer ones are pushed out, farther ones pulled in, toward a rim
+/// they never cross.
+fn fisheye(center: Pos2, reach: Vec2) -> impl Fn(Pos2) -> Pos2 {
+    move |p| {
+        let off = p - center;
+        let r = (off / reach).length();
+        if r < 1e-4 {
+            return center + off * (LENS_BEND / LENS_BEND.tanh());
+        }
+        center + off * ((LENS_BEND * r).tanh() / (LENS_BEND.tanh() * r))
+    }
+}
+
+/// A flat `color` mesh over `rect`, cut into a grid so `place` can bend it.
+fn bent_rect(rect: Rect, place: impl Fn(Vec2) -> Pos2, color: Color32) -> Mesh {
+    const STEPS: u32 = 8;
+    let mut mesh = Mesh::default();
+    for y in 0..=STEPS {
+        for x in 0..=STEPS {
+            let t = Vec2::new(x as f32, y as f32) / STEPS as f32;
+            mesh.colored_vertex(place((rect.min + rect.size() * t).to_vec2()), color);
+        }
+    }
+    for y in 0..STEPS {
+        for x in 0..STEPS {
+            let a = y * (STEPS + 1) + x;
+            let b = a + STEPS + 1;
+            mesh.add_triangle(a, a + 1, b);
+            mesh.add_triangle(a + 1, b + 1, b);
+        }
+    }
+    mesh
+}
+
+/// Like [`projected_mesh`], but each glyph is first cut into a `steps` by
+/// `steps` grid, so a strong bend curves it instead of just moving its corners.
+fn warped_mesh(
+    mesh: &mut Mesh,
+    galley: &Galley,
+    atlas: Vec2,
+    place: impl Fn(Vec2) -> Pos2,
+    color: Color32,
+    steps: u32,
+) {
+    let bounds = |points: &mut dyn Iterator<Item = Pos2>| {
+        points.fold(Rect::NOTHING, |r, p| r.union(Rect::from_min_max(p, p)))
+    };
+    for row in &galley.rows {
+        // Glyphs come as axis-aligned quads of four vertices.
+        for quad in row.visuals.mesh.vertices.chunks_exact(4) {
+            let pos = bounds(&mut quad.iter().map(|v| v.pos));
+            let uv = bounds(&mut quad.iter().map(|v| v.uv));
+            let base = mesh.vertices.len() as u32;
+            for y in 0..=steps {
+                for x in 0..=steps {
+                    let t = Vec2::new(x as f32, y as f32) / steps as f32;
+                    let at = pos.min + pos.size() * t;
+                    let uv = uv.min + uv.size() * t;
+                    mesh.vertices.push(Vertex {
+                        pos: place(row.pos.to_vec2() + at.to_vec2()),
+                        uv: Pos2::new(uv.x / atlas.x, uv.y / atlas.y),
+                        color,
+                    });
+                }
+            }
+            for y in 0..steps {
+                for x in 0..steps {
+                    let a = base + y * (steps + 1) + x;
+                    let b = a + steps + 1;
+                    mesh.add_triangle(a, a + 1, b);
+                    mesh.add_triangle(a + 1, b + 1, b);
+                }
+            }
+        }
+    }
+}
+
+/// Adds `galley`'s glyphs to `mesh`, each vertex placed by `place` from its
+/// position in the galley, all in `color`. `atlas` is the font atlas size in
+/// texels.
+fn projected_mesh(
+    mesh: &mut Mesh,
+    galley: &Galley,
+    atlas: Vec2,
+    place: impl Fn(Vec2) -> Pos2,
+    color: Color32,
+) {
+    for row in &galley.rows {
+        let glyphs = &row.visuals.mesh;
+        let base = mesh.vertices.len() as u32;
+        mesh.indices.extend(glyphs.indices.iter().map(|i| base + i));
+        mesh.vertices.extend(glyphs.vertices.iter().map(|v| Vertex {
+            pos: place(row.pos.to_vec2() + v.pos.to_vec2()),
+            uv: Pos2::new(v.uv.x / atlas.x, v.uv.y / atlas.y),
+            color,
+        }));
     }
 }
 
@@ -1949,8 +2526,7 @@ fn draw_lyrics(
         // Words light up only on the line growing into the center.
         let icons = icons::for_line(&line.text);
         let sung = position.filter(|_| !lyrics.estimated && emphasis > 0.0).map(|p| {
-            let next = lyrics.synced.get(i as usize + 1).map(|l| l.at);
-            sung_glyphs(line.sung_chars(p, next), &icons)
+            sung_glyphs(lyrics.sung_chars(i as usize, p), &icons)
         });
         for (font, weight, sweeps) in [(&big, emphasis, true), (&small, 1.0 - emphasis, false)] {
             let a = alpha * weight;
@@ -2260,6 +2836,8 @@ mod tests {
                 line(6.0, "Celou noc jedu městem"),
                 line(10.0, "Na rohu stojím a srdce mi hoří"),
                 line(14.0, "Peníze v kapse, auto je rychlý"),
+                line(17.0, "Celá noc a já pořád jedu dál"),
+                line(20.0, "Srdce bije, město nespí"),
             ],
             plain: None,
             estimated: false,
@@ -2273,7 +2851,13 @@ mod tests {
         };
         let mut atlas = Atlas::default();
         let palettes = [[0.95, 0.45, 0.35], [0.2, 0.45, 0.95]];
-        for (n, at) in [10.05, 10.4, 11.2, 12.1, 13.0, 15.0].into_iter().enumerate() {
+        let shots = [10.05, 10.4, 11.2, 12.1, 13.0, 15.0];
+        let styles = [LyricsStyle::Words, LyricsStyle::Drum, LyricsStyle::Lens];
+        for (n, (style, at)) in styles
+            .into_iter()
+            .flat_map(|style| shots.map(|at| (style, at)))
+            .enumerate()
+        {
             let vivid = palettes[n % 2];
             let draw = |ctx: &egui::Context| {
                 let painter = ctx.layer_painter(egui::LayerId::background());
@@ -2281,7 +2865,7 @@ mod tests {
                 painter.rect_filled(rect, 0.0, Color32::from_rgb(14, 10, 16));
                 let position = Duration::from_secs_f64(at);
                 let (center, size) = (rect.center().y, big_lyrics_size(rect));
-                let video = if n >= 4 { 1.0 } else { 0.0 };
+                let video = if n % shots.len() >= 4 { 1.0 } else { 0.0 };
                 if video > 0.0 {
                     // A bright, busy picture in place of a clip.
                     for k in 0..12 {
@@ -2291,7 +2875,11 @@ mod tests {
                     }
                     draw_band(&painter, rect, center, size * WORD_SCALE * 1.7, 175.0);
                 }
-                draw_words(&painter, rect, &lyrics, position, center, size, vivid, video);
+                match style {
+                    LyricsStyle::Words => draw_words(&painter, rect, &lyrics, position, center, size, vivid, video, None),
+                    LyricsStyle::Drum => draw_drum(&painter, rect, &lyrics, position, center, size, vivid, video),
+                    LyricsStyle::Lens => draw_lens(&painter, rect, &lyrics, position, center, size, vivid, video),
+                }
             };
             // The first run loads the fonts.
             let warm_up = ctx.run_ui(input(), |ui| draw(ui.ctx()));
@@ -2306,7 +2894,12 @@ mod tests {
                     rasterize(&mut image, &mesh, &atlas);
                 }
             }
-            image.save(dir.join(format!("words{n}.png"))).unwrap();
+            let kind = match style {
+                LyricsStyle::Words => "words",
+                LyricsStyle::Drum => "drum",
+                LyricsStyle::Lens => "lens",
+            };
+            image.save(dir.join(format!("{kind}{}.png", n % shots.len()))).unwrap();
         }
     }
 
@@ -2345,7 +2938,7 @@ mod tests {
                 ui.painter().rect_filled(rect, 0.0, Color32::from_rgb(30, 20, 40));
                 let words = |ui: &mut egui::Ui, y: f32| {
                     let s = if second { big_lyrics_size(rect) } else { main_lyrics_size(rect) };
-                    draw_words(ui.painter(), rect, &lyrics, position, y, s, [0.95, 0.45, 0.35], 0.0);
+                    draw_words(ui.painter(), rect, &lyrics, position, y, s, [0.95, 0.45, 0.35], 0.0, None);
                 };
                 if second {
                     match beam::arriving(rect, dir_x, t) {

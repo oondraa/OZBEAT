@@ -240,7 +240,7 @@ impl VolumeHud {
 }
 
 /// An arc of `radius` around `center`, opening to the right, `spread` radians to each side.
-fn arc(painter: &Painter, center: Pos2, radius: f32, spread: f32, stroke: Stroke) {
+pub(crate) fn arc(painter: &Painter, center: Pos2, radius: f32, spread: f32, stroke: Stroke) {
     const STEPS: usize = 16;
     let points = (0..=STEPS)
         .map(|i| {
