@@ -530,6 +530,7 @@ fn showing(ui: &mut egui::Ui, s: &mut Settings, reveal: &dyn Fn(usize) -> f32) {
                     (LyricsStyle::Words, "Po slovech"),
                     (LyricsStyle::Drum, "Válec"),
                     (LyricsStyle::Lens, "Čočka"),
+                    (LyricsStyle::Loupe, "Lupa"),
                 ],
             );
             switch(

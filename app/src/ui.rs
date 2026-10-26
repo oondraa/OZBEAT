@@ -1059,7 +1059,8 @@ impl VisualApp {
                 s.lyrics = match s.lyrics {
                     LyricsStyle::Words => LyricsStyle::Drum,
                     LyricsStyle::Drum => LyricsStyle::Lens,
-                    LyricsStyle::Lens => LyricsStyle::Words,
+                    LyricsStyle::Lens => LyricsStyle::Loupe,
+                    LyricsStyle::Loupe => LyricsStyle::Words,
                 };
                 s.save();
                 s.lyrics
@@ -1068,6 +1069,7 @@ impl VisualApp {
                 LyricsStyle::Words => "Texty po slovech",
                 LyricsStyle::Drum => "Texty na válci",
                 LyricsStyle::Lens => "Texty pod čočkou",
+                LyricsStyle::Loupe => "Texty pod lupou",
             });
         }
         if settings_key {
@@ -2051,6 +2053,7 @@ fn draw_lyrics_shade(
     let reach = match (f.position, f.lyrics_style) {
         (None, _) => size * 2.4,
         (Some(_), LyricsStyle::Words | LyricsStyle::Lens) => size * WORD_SCALE * 1.7,
+        (Some(_), LyricsStyle::Loupe) => size * LOUPE_SCALE * 2.8,
         (Some(_), LyricsStyle::Drum) => size * DRUM_SCALE * 3.2,
     };
     draw_band(painter, rect, center_y, reach, 175.0 * video);
@@ -2080,6 +2083,7 @@ fn draw_timed_lyrics(
         LyricsStyle::Words => draw_words(painter, rect, lyrics, position, center_y, size, vivid, video, None),
         LyricsStyle::Drum => draw_drum(painter, rect, lyrics, position, center_y, size, vivid, video),
         LyricsStyle::Lens => draw_lens(painter, rect, lyrics, position, center_y, size, vivid, video),
+        LyricsStyle::Loupe => draw_loupe(painter, rect, lyrics, position, center_y, size, vivid, video),
     }
 }
 
@@ -2531,21 +2535,128 @@ fn draw_lens(
     let center = Pos2::new(rect.center().x, center_y);
     // About the stack's own size, so every word in it curves.
     let reach = Vec2::splat(size * WORD_SCALE * 1.45);
-    let bend = fisheye(center, reach);
+    let bend = fisheye(center, reach, LENS_BEND);
     draw_words(painter, rect, lyrics, position, center_y, size * LENS_SIZE, vivid, video, Some(&bend));
+}
+
+/// Size of the lines under the loupe before it swells its middle, against
+/// the lines' size.
+const LOUPE_SCALE: f32 = 1.1;
+/// How hard the loupe bends, gentler than the lens so whole lines read.
+const LOUPE_BEND: f32 = 1.5;
+/// Space from one line to the next under the loupe, in font sizes.
+const LOUPE_GAP: f32 = 1.3;
+/// How long the loupe takes to glide on to the next word, unless it comes sooner.
+const LOUPE_GLIDE: f32 = 0.25;
+
+/// Lyrics under a magnifying glass gliding along the line being sung: the
+/// word being sung swells big and bulging in its middle, the rest of the
+/// line curving and shrinking toward the rim on either side, so the words
+/// coming next can be read ahead. The lines before and after bow above and
+/// below it. Words light up as they're sung, the current one on a highlight.
+#[allow(clippy::too_many_arguments)]
+fn draw_loupe(
+    painter: &egui::Painter,
+    rect: Rect,
+    lyrics: &mv_enrich::Lyrics,
+    position: Duration,
+    center_y: f32,
+    size: f32,
+    vivid: [f32; 3],
+    video: f32,
+) {
+    let Some(now) = lyrics.line_at(position) else {
+        return;
+    };
+    let scroll = line_scroll(lyrics, now, position);
+
+    let px = ((size * LOUPE_SCALE / 4.0).round() * 4.0).max(16.0);
+    // Laid out as big as the loupe swells them, so they stay sharp there.
+    let raster = (px * LOUPE_BEND / LOUPE_BEND.tanh() / 4.0).round() * 4.0;
+    let scale = px / raster;
+    let gap = px * LOUPE_GAP;
+    let center = Pos2::new(rect.center().x, center_y);
+    let bend = fisheye(center, Vec2::new(rect.width() * 0.42, gap * 2.0), LOUPE_BEND);
+    let (text_color, box_color) = word_colors(vivid);
+    let text_color = lerp_color(text_color, Color32::WHITE, video);
+    let font = FontId::new(raster, FontFamily::Name(HEAVY.into()));
+    let icon_font = FontId::new(raster * 0.85, FontFamily::Name(icons::FONT.into()));
+    let atlas = Vec2::from(painter.fonts(|f| f.font_image_size()).map(|v| v as f32));
+
+    let mut shapes = Vec::new();
+    for i in now.saturating_sub(2)..(now + 3).min(lyrics.synced.len()) {
+        let d = i as f32 - scroll;
+        let alpha = 1.0 - remap(d.abs(), 1.2, 2.2);
+        if alpha <= 0.0 || lyrics.synced[i].text.trim().is_empty() {
+            continue;
+        }
+        let (pieces, width) = line_pieces(painter, lyrics, i, &font, &icon_font);
+        let starts = lyrics.word_starts(i);
+        let sung = starts.partition_point(|(_, at)| *at <= position);
+        let since = sung.checked_sub(1).map(|k| (position - starts[k].1).as_secs_f32());
+
+        // The loupe rests on the word being sung, gliding over from the one
+        // before. Lines above and below sit centered, so they read whole,
+        // and slide to their first word as they move into the middle.
+        let middle = |k: usize| {
+            pieces
+                .iter()
+                .find(|p| p.word == k && !p.icon)
+                .map_or(width / 2.0, |p| p.x + p.galley.size().x / 2.0)
+        };
+        let focus = match (sung.checked_sub(1), since) {
+            (Some(k), Some(since)) => {
+                let glide = starts.get(k + 1).map_or(LOUPE_GLIDE, |next| {
+                    (next.1 - starts[k].1).as_secs_f32().min(LOUPE_GLIDE)
+                });
+                let t = ease_out_cubic((since / glide.max(0.05)).min(1.0));
+                let from = middle(k.saturating_sub(1));
+                from + (middle(k) - from) * t
+            }
+            _ => middle(0),
+        };
+        let focus = focus + (width / 2.0 - focus) * d.abs().min(1.0);
+
+        let place = |v: Vec2| bend(center + Vec2::new(0.0, d * gap) + v * scale);
+        let mut mesh = Mesh::default();
+        for piece in &pieces {
+            let (color, highlight, dim) = word_look(i == now, i < now, piece.word, sung, since, text_color);
+            let offset = Vec2::new(piece.x - focus, -piece.galley.size().y / 2.0);
+            if highlight > 0.0 && !piece.icon {
+                let ink = piece
+                    .galley
+                    .rows
+                    .iter()
+                    .map(|r| r.visuals.mesh_bounds.translate(r.pos.to_vec2()))
+                    .fold(Rect::NOTHING, Rect::union);
+                let pad = Vec2::new(0.12, 0.06) * piece.galley.size().y;
+                let ink = ink.expand2(pad).translate(offset);
+                let fill = box_color.gamma_multiply(alpha * highlight);
+                shapes.push(Shape::mesh(bent_rect(ink, place, fill)));
+            }
+            let tint = if piece.icon {
+                lerp_color(color, box_color, 0.35)
+            } else {
+                color
+            };
+            warped_mesh(&mut mesh, &piece.galley, atlas, |v| place(v + offset), tint.gamma_multiply(alpha * dim), 4);
+        }
+        shapes.push(Shape::mesh(mesh));
+    }
+    painter.extend(shapes);
 }
 
 /// A fisheye centered on `center`: points `reach` away (an ellipse) stay
 /// put, nearer ones are pushed out, farther ones pulled in, toward a rim
-/// they never cross.
-fn fisheye(center: Pos2, reach: Vec2) -> impl Fn(Pos2) -> Pos2 {
+/// they never cross. The middle grows by `strength` over its tanh.
+fn fisheye(center: Pos2, reach: Vec2, strength: f32) -> impl Fn(Pos2) -> Pos2 {
     move |p| {
         let off = p - center;
         let r = (off / reach).length();
         if r < 1e-4 {
-            return center + off * (LENS_BEND / LENS_BEND.tanh());
+            return center + off * (strength / strength.tanh());
         }
-        center + off * ((LENS_BEND * r).tanh() / (LENS_BEND.tanh() * r))
+        center + off * ((strength * r).tanh() / (strength.tanh() * r))
     }
 }
 
@@ -3074,7 +3185,7 @@ mod tests {
         let mut atlas = Atlas::default();
         let palettes = [[0.95, 0.45, 0.35], [0.2, 0.45, 0.95]];
         let shots = [10.05, 10.4, 11.2, 12.1, 13.0, 15.0];
-        let styles = [LyricsStyle::Words, LyricsStyle::Drum, LyricsStyle::Lens];
+        let styles = [LyricsStyle::Words, LyricsStyle::Drum, LyricsStyle::Lens, LyricsStyle::Loupe];
         for (n, (style, at)) in styles
             .into_iter()
             .flat_map(|style| shots.map(|at| (style, at)))
@@ -3101,6 +3212,7 @@ mod tests {
                     LyricsStyle::Words => draw_words(&painter, rect, &lyrics, position, center, size, vivid, video, None),
                     LyricsStyle::Drum => draw_drum(&painter, rect, &lyrics, position, center, size, vivid, video),
                     LyricsStyle::Lens => draw_lens(&painter, rect, &lyrics, position, center, size, vivid, video),
+                    LyricsStyle::Loupe => draw_loupe(&painter, rect, &lyrics, position, center, size, vivid, video),
                 }
             };
             // The first run loads the fonts.
@@ -3120,6 +3232,7 @@ mod tests {
                 LyricsStyle::Words => "words",
                 LyricsStyle::Drum => "drum",
                 LyricsStyle::Lens => "lens",
+                LyricsStyle::Loupe => "loupe",
             };
             image.save(dir.join(format!("{kind}{}.png", n % shots.len()))).unwrap();
         }
