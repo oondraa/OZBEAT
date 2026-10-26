@@ -31,6 +31,8 @@ pub enum LyricsStyle {
     Drum,
     /// One word at a time like `Words`, seen through a fisheye lens.
     Lens,
+    /// Whole lines under a magnifying glass gliding along the word being sung.
+    Loupe,
 }
 
 /// Where the music video plays once Ctrl+D (or the screensaver) puts the
