@@ -53,6 +53,7 @@ KEYS:
     Ctrl+D               mirror the visuals on the next screen
     Ctrl+L               next lyrics style (words, drum, lens, loupe)
     Ctrl+K               share card of the line being sung (Pictures\\OZBEAT, clipboard)
+    Alt+Left/Right       this song's lyrics later / earlier, remembered
     Ctrl+Alt+T           lyrics alone over the desktop, from anywhere
     F11 / double-click   toggle fullscreen
     Esc                  leave fullscreen / close settings

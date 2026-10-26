@@ -1,10 +1,10 @@
 //! User choices, made in the setup screen (Ctrl+S) and kept across restarts.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use mv_core::Device;
+use mv_core::{Device, Track};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -72,6 +72,9 @@ pub struct Settings {
     pub playback_keys: bool,
     /// The lyrics alone over the desktop and every app (Ctrl+Alt+T).
     pub overlay: bool,
+    /// Per song (see [`Settings::lyrics_offset`]), how many milliseconds
+    /// earlier its lyrics run than their timing says. Set with Alt+Left/Right.
+    pub lyrics_offsets: BTreeMap<String, i32>,
 }
 
 impl Default for Settings {
@@ -88,6 +91,7 @@ impl Default for Settings {
             buttons: true,
             playback_keys: true,
             overlay: false,
+            lyrics_offsets: BTreeMap::new(),
         }
     }
 }
@@ -125,5 +129,15 @@ impl Settings {
 
     pub fn allows(&self, device: &Device) -> bool {
         !self.disabled_sources.contains(&device.key())
+    }
+
+    /// The song's key in `lyrics_offsets`.
+    pub fn song_key(track: &Track) -> String {
+        format!("{} - {}", track.artist.as_deref().unwrap_or(""), track.title)
+    }
+
+    /// How many milliseconds earlier the song's lyrics run, 0 unless shifted.
+    pub fn lyrics_offset(&self, track: &Track) -> i32 {
+        self.lyrics_offsets.get(&Self::song_key(track)).copied().unwrap_or(0)
     }
 }

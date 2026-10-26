@@ -23,7 +23,7 @@ use crate::beam;
 use crate::card;
 use crate::clip::ClipPlayer;
 use crate::pipeline::SharedScene;
-use crate::settings::{ClipScreen, LyricsStyle, SharedSettings};
+use crate::settings::{ClipScreen, LyricsStyle, Settings, SharedSettings};
 use crate::setup::{self, BRAND_BLUE};
 use crate::titlebar::TitleBar;
 use crate::transport::{Press, Transport};
@@ -597,6 +597,8 @@ struct FrameData {
     audio: Option<Capture>,
     devices: Vec<Device>,
     position: Option<Duration>,
+    /// `position` shifted by the song's lyrics offset (Alt+Left/Right).
+    lyrics_position: Option<Duration>,
     pulse: f32,
     palette: [[f32; 3]; 3],
     lyrics_style: LyricsStyle,
@@ -650,10 +652,12 @@ impl VisualApp {
             None => pulse(now_playing.as_ref(), enrichment.as_deref(), position, time),
         };
         // Intensity 0.5 (the default) keeps the tuned amplitude.
-        let (intensity, clips, clip_screen, lyrics_style) = {
+        let (intensity, clips, clip_screen, lyrics_style, offset) = {
             let s = self.settings.lock().unwrap();
-            (s.intensity, s.youtube, s.clip_screen, s.lyrics)
+            let offset = now_playing.as_ref().map_or(0, |np| s.lyrics_offset(&np.track));
+            (s.intensity, s.youtube, s.clip_screen, s.lyrics, offset)
         };
+        let lyrics_position = position.map(|p| shift(p, offset));
         let clip = self.sync_clip(ctx, clip_path.filter(|_| clips), position, playing);
         let clip = clip.map(|(texture, size, alpha)| ClipFrame {
             texture,
@@ -685,12 +689,12 @@ impl VisualApp {
         // Without a position the lyrics are whole lines, always worth showing.
         let singing = enrichment.as_ref().filter(|e| {
             e.lyrics.as_ref().is_some_and(|l| {
-                !l.synced.is_empty() && !idle && position.is_none_or(|p| l.sung_near(p))
+                !l.synced.is_empty() && !idle && lyrics_position.is_none_or(|p| l.sung_near(p))
             })
         });
         self.lyrics_shown.set(singing.is_some());
         if let Some(e) = singing {
-            self.lyrics_seen = Some((Arc::clone(e), position.unwrap_or_default()));
+            self.lyrics_seen = Some((Arc::clone(e), lyrics_position.unwrap_or_default()));
         }
         let outgoing = self.outgoing.as_ref().and_then(|(e, at, alpha, since)| {
             let t = since.elapsed().as_secs_f32() / LYRICS_OUT.as_secs_f32();
@@ -725,6 +729,7 @@ impl VisualApp {
             audio,
             devices,
             position,
+            lyrics_position,
             time,
             flow: self.flow,
         }
@@ -860,7 +865,7 @@ impl VisualApp {
             .filter(|l| !l.synced.is_empty());
         let scroll = synced.map(|lyrics| {
             let line = f
-                .position
+                .lyrics_position
                 .and_then(|p| lyrics.line_at(p))
                 .map_or(-1.0, |i| i as f32);
             self.lyric_scroll.position(&np.track.title, line)
@@ -934,12 +939,12 @@ impl VisualApp {
                                 let mut painter = ui.painter().clone();
                                 painter.multiply_opacity(ready);
                                 let y = rect.center().y;
-                                draw_timed_lyrics(&painter, rect, f, f.position, video, lyrics, scroll, y, big);
+                                draw_timed_lyrics(&painter, rect, f, f.lyrics_position, video, lyrics, scroll, y, big);
                             });
                         } else {
                             let mut painter = ui.painter().clone();
                             painter.multiply_opacity(ready);
-                            draw_timed_lyrics(&painter, rect, f, f.position, video, lyrics, scroll, center_y, size);
+                            draw_timed_lyrics(&painter, rect, f, f.lyrics_position, video, lyrics, scroll, center_y, size);
                         }
                     };
                     match leaving {
@@ -981,7 +986,7 @@ impl VisualApp {
                         if let (Some(lyrics), Some(scroll), true) = (synced, scroll, ready > 0.0) {
                             let mut painter = ui.painter().clone();
                             painter.multiply_opacity(ready);
-                            draw_timed_lyrics(&painter, rect, f, f.position, video, lyrics, scroll, y, big);
+                            draw_timed_lyrics(&painter, rect, f, f.lyrics_position, video, lyrics, scroll, y, big);
                         }
                         // Nothing to sing: show what plays rather than an empty
                         // screen, once the last song's lyrics have given way.
@@ -1087,7 +1092,50 @@ impl VisualApp {
             self.toggle_mirror(ctx);
         }
         self.handle_playback_keys(ctx);
+        self.handle_offset_keys(ctx);
         escape
+    }
+
+    /// Alt+Right runs the song's lyrics earlier, Alt+Left later, kept for
+    /// next time it plays.
+    fn handle_offset_keys(&mut self, ctx: &egui::Context) {
+        if ctx.egui_wants_keyboard_input() {
+            return;
+        }
+        let step = ctx.input(|i| {
+            let alt = i.modifiers.alt && !i.modifiers.command;
+            if alt && i.key_pressed(egui::Key::ArrowRight) {
+                OFFSET_STEP
+            } else if alt && i.key_pressed(egui::Key::ArrowLeft) {
+                -OFFSET_STEP
+            } else {
+                0
+            }
+        });
+        if step == 0 {
+            return;
+        }
+        let Some(np) = self.scene.lock().unwrap().now_playing.clone() else {
+            return;
+        };
+        let offset = {
+            let mut s = self.settings.lock().unwrap();
+            let key = Settings::song_key(&np.track);
+            let offset = s.lyrics_offset(&np.track) + step;
+            if offset == 0 {
+                s.lyrics_offsets.remove(&key);
+            } else {
+                s.lyrics_offsets.insert(key, offset);
+            }
+            s.save();
+            offset
+        };
+        let secs = format!("{:.2}", offset.unsigned_abs() as f32 / 1000.0).replace('.', ",");
+        self.show_toast(&match offset.signum() {
+            1 => format!("Texty o {secs} s dřív"),
+            -1 => format!("Texty o {secs} s později"),
+            _ => "Texty bez posunu".to_owned(),
+        });
     }
 
     /// Ctrl+Up/Down turns what plays louder or quieter, Ctrl+Left/Right skips
@@ -1496,12 +1544,12 @@ impl VisualApp {
             .filter(|l| !l.synced.is_empty());
         if let Some(lyrics) = lyrics.filter(|_| f.lyrics > 0.0) {
             let line = f
-                .position
+                .lyrics_position
                 .and_then(|p| lyrics.line_at(p))
                 .map_or(-1.0, |i| i as f32);
             let mut painter = ui.painter().clone();
             painter.multiply_opacity(f.lyrics);
-            draw_timed_lyrics(&painter, rect, f, f.position, video, lyrics, line, center_y, size);
+            draw_timed_lyrics(&painter, rect, f, f.lyrics_position, video, lyrics, line, center_y, size);
         }
     }
 
@@ -1600,10 +1648,11 @@ impl VisualApp {
             return;
         };
         // The line being sung, or the last one with words in a short pause.
+        let offset = self.settings.lock().unwrap().lyrics_offset(&np.track);
         let line = enrichment
             .as_ref()
             .and_then(|e| e.lyrics.as_ref())
-            .zip(np.position_now(SystemTime::now()))
+            .zip(np.position_now(SystemTime::now()).map(|p| shift(p, offset)))
             .filter(|(lyrics, at)| lyrics.sung_near(*at))
             .and_then(|(lyrics, at)| {
                 let now = lyrics.line_at(at)?;
@@ -2034,6 +2083,19 @@ fn scaled_about(anchor: Pos2, y: f32, scale: f32) -> TSTransform {
         Vec2::new(anchor.x * (1.0 - scale), y - scale * anchor.y),
         scale,
     )
+}
+
+/// How far one Alt+Left/Right moves a song's lyrics, in milliseconds.
+const OFFSET_STEP: i32 = 250;
+
+/// `position` moved `offset` milliseconds ahead (behind, when negative).
+fn shift(position: Duration, offset: i32) -> Duration {
+    let by = Duration::from_millis(offset.unsigned_abs().into());
+    if offset >= 0 {
+        position + by
+    } else {
+        position.saturating_sub(by)
+    }
 }
 
 /// Over a music video (`video`, 0 -> 1 as it fades in), a dark band behind
