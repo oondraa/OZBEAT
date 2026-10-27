@@ -16,6 +16,10 @@ const PORT: u16 = 11000;
 const LONG_POLL_SECS: u64 = 100;
 const RETRY_DELAY: Duration = Duration::from_secs(5);
 const MDNS_SERVICE: &str = "_musc._tcp.local.";
+/// `secs` is whole seconds, so a fresh status can be up to a second behind.
+/// Polling this often until it ticks over pins the fraction down.
+const TICK_POLL: Duration = Duration::from_millis(50);
+const TICK_WAIT: Duration = Duration::from_millis(1300);
 
 /// Polls one player until the receiver goes away.
 pub fn spawn(host: String, tx: EventSender) {
@@ -107,7 +111,63 @@ async fn run(host: String, tx: EventSender) {
             }
             last = status.now_playing;
         }
+
+        // Send the rough position right away, then the exact one once found.
+        if let Some(np) = &last
+            && np.state == PlaybackState::Playing
+            && let Some(exact) = find_tick(&client, &host, name.as_deref(), np).await
+        {
+            if tx.send(SourceEvent::Updated(id.clone(), exact.clone())).is_err() {
+                return;
+            }
+            last = Some(exact);
+        }
     }
+}
+
+/// Polls `/Status` until `secs` ticks over and returns `np` with the
+/// position anchored to that moment, i.e. accurate to a few tens of ms
+/// instead of up to a second late. `None` if it didn't tick cleanly
+/// (paused, seeked, track changed) within [`TICK_WAIT`].
+async fn find_tick(
+    client: &reqwest::Client,
+    host: &str,
+    name: Option<&str>,
+    np: &NowPlaying,
+) -> Option<NowPlaying> {
+    let url = format!("http://{host}:{PORT}/Status");
+    let started = std::time::Instant::now();
+    // (secs, when the previous sample was answered)
+    let mut prev: Option<(Duration, SystemTime)> = None;
+    while started.elapsed() < TICK_WAIT {
+        let sent = SystemTime::now();
+        let body = fetch(client, &url).await.ok()?;
+        let answered = SystemTime::now();
+        let sample = parse_status(&body, host, name, answered).ok()?.now_playing?;
+        if sample.track != np.track || sample.state != PlaybackState::Playing {
+            return None;
+        }
+        let secs = sample.position?;
+        // The player read its clock somewhere between sending and answering.
+        let at = sent + answered.duration_since(sent).unwrap_or_default() / 2;
+        match prev {
+            Some((before, _)) if secs == before => {}
+            Some((before, before_at)) if secs == before + Duration::from_secs(1) => {
+                // It ticked between the two samples; take the middle.
+                let tick = before_at + at.duration_since(before_at).unwrap_or_default() / 2;
+                return Some(NowPlaying {
+                    position: Some(secs),
+                    position_at: tick,
+                    ..sample
+                });
+            }
+            Some(_) => return None,
+            None => {}
+        }
+        prev = Some((secs, at));
+        tokio::time::sleep(TICK_POLL).await;
+    }
+    None
 }
 
 /// Sets the player's volume, 0..=100.
