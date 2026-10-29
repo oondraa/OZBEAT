@@ -78,17 +78,17 @@
       "image": "https://oondraa.github.io/OZBEAT/assets/og-ozbeat.png",
       "screenshot": [
         "https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-calin-superstar-cover.webp",
-        "https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-calin-superstar-lyrics.webp",
-        "https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-calin-superstar.webp",
-        "https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-cashanova-bulhar-praha-den-a-noc.webp",
-        "https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-churaq-cyril-baroko-2.webp",
-        "https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-synced-lyrics-amber.webp",
-        "https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-synced-lyrics-music-video.webp",
-        "https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-synced-lyrics-pink.webp",
-        "https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-synced-lyrics-teal.webp",
-        "https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-viktor-sheen-cigo-a-kava.webp"
+        "https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-live-lyrics-screen.webp",
+        "https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-live-fire.webp",
+        "https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-live-emko.webp",
+        "https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-live-yzomandias.webp",
+        "https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-live-praha.webp",
+        "https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-live-punisher.webp",
+        "https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-live-cash.webp",
+        "https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-live-patent.webp",
+        "https://oondraa.github.io/OZBEAT/assets/shots/ozbeat-live-haha.webp"
       ],
-      "featureList": ["Word-by-word synced lyrics", "Music videos", "Cover art background", "Spotify and YouTube", "BluOS speakers", "Pause, skip and volume controls", "Two screens", "Windows screensaver", "WLED lights"]
+      "featureList": ["Word-by-word synced lyrics", "Live kinetic lyrics", "Music videos", "Cover art background", "Spotify and YouTube", "BluOS speakers", "Pause, skip and volume controls", "Two screens", "Windows screensaver", "WLED lights"]
     },
     {
       "@type": "FAQPage",
@@ -376,6 +376,25 @@
     .rise { animation: rise 0.8s var(--ease) both; animation-delay: calc(var(--i, 0) * 80ms); }
   }
 
+  /* Headings come in like the live lyrics: word by word, the longest slammed
+     down and split in red and cyan, the rest popping or dropping in. */
+  .live .w { display: inline-block; }
+  @media (prefers-reduced-motion: no-preference) {
+    .live:not(.go) .w { opacity: 0; }
+    .live.go .w { animation: w-pop 0.55s var(--ease) both; animation-delay: calc(var(--d) * 85ms + 120ms); }
+    .live.go .w.drop { animation-name: w-drop; animation-duration: 0.65s; }
+    .live.go .w.slam { animation: w-slam 0.6s cubic-bezier(0.5, 0, 0.75, 0) both; animation-delay: calc(var(--d) * 85ms + 120ms); }
+    @keyframes w-pop { from { opacity: 0; transform: translateY(0.35em) scale(0.6); } 60% { opacity: 1; transform: translateY(-0.04em) scale(1.06); } to { opacity: 1; transform: none; } }
+    @keyframes w-drop { from { opacity: 0; transform: translateY(-0.9em); } 55% { opacity: 1; transform: translateY(0.07em); } 78% { transform: translateY(-0.03em); } to { opacity: 1; transform: none; } }
+    @keyframes w-slam {
+      from { opacity: 0; transform: scale(2.3) rotate(-3deg); }
+      45% { opacity: 1; transform: scale(1); text-shadow: -0.06em 0 #ff2a5a, 0.06em 0 #28dcff; }
+      62% { transform: translate(0.03em, -0.02em) scale(1.03); text-shadow: -0.035em 0 #ff2a5a, 0.035em 0 #28dcff; }
+      78% { transform: translate(-0.02em, 0.01em); }
+      to { opacity: 1; transform: none; text-shadow: none; }
+    }
+  }
+
   @media (max-width: 960px) {
     .hero { min-height: 0; }
     .hero .wrap { grid-template-columns: minmax(0, 1fr); gap: 32px; }
@@ -429,9 +448,9 @@
         <div class="phone-note phone-only" data-i18n="phone">OZBEAT běží na počítačích s Windows. Pošlete si odkaz a stáhněte ho tam.</div>
         </div>
         <div class="deck is-stacked" id="deck" aria-label="Screenshots">
-          <button class="card" type="button" data-pos="0" data-color="#4f8f93"><img src="../assets/shots/ozbeat-viktor-sheen-cigo-a-kava.webp" width="1600" height="900" alt="OZBEAT music visualizer by oondraa playing Cígo a káva by Viktor Sheen: album cover, title and synced lyrics over the blurred artwork"></button>
-          <button class="card" type="button" data-pos="1" data-color="#7b3fa6"><img src="../assets/shots/ozbeat-calin-superstar.webp" width="1600" height="900" alt="OZBEAT playing SuperStar by Calin with synced lyrics over the music video"></button>
-          <button class="card" type="button" data-pos="2" data-color="#a8322c"><img src="../assets/shots/ozbeat-churaq-cyril-baroko-2.webp" width="1600" height="900" alt="OZBEAT playing Baroko 2 by Churaq Cyril with synced lyrics in the cover's red"></button>
+          <button class="card" type="button" data-pos="0" data-color="#973f49"><img src="../assets/shots/ozbeat-live-fire.webp" width="1600" height="900" alt="OZBEAT music visualizer by oondraa: live lyrics, each word in its own color and size over the blurred artwork"></button>
+          <button class="card" type="button" data-pos="1" data-color="#4f378c"><img src="../assets/shots/ozbeat-live-yzomandias.webp" width="1600" height="900" alt="OZBEAT playing El Camino by Yzomandias with live lyrics over the music video"></button>
+          <button class="card" type="button" data-pos="2" data-color="#6a898c"><img src="../assets/shots/ozbeat-live-praha.webp" width="1600" height="900" alt="OZBEAT live lyrics: Prahou with a stripe in Prague's colors"></button>
         </div>
       </div>
     </section>
@@ -447,21 +466,21 @@
       </div>
       <section class="watch">
         <h2 data-i18n="watchT">Podívejte se, jak to hraje</h2>
-        <p data-i18n="watch">Skutečné záznamy z OZBEATu. Pozadí plyne v barvách obalu a text jde s písničkou.</p>
+        <p data-i18n="watch">Skutečné záznamy živých textů. Každé slovo se hýbe po svém, podle toho, co znamená a jak se zpívá, a pozadí plyne v barvách obalu.</p>
         <div class="player">
-          <video id="player" muted playsinline preload="none" poster="../assets/shots/ozbeat-calin-superstar.webp" src="../assets/video/ozbeat-calin-superstar.mp4" aria-label="OZBEAT music visualizer recording"></video>
+          <video id="player" muted playsinline preload="none" poster="../assets/shots/ozbeat-live-fire.webp" src="../assets/video/ozbeat-live-fire.mp4" aria-label="OZBEAT music visualizer recording"></video>
           <div class="bar" aria-hidden="true"><i id="player-bar"></i></div>
           <button class="state" id="player-state" type="button" aria-label="Play"><i class="ph ph-play" aria-hidden="true"></i></button>
         </div>
         <div class="picks">
-          <button class="pick" type="button" data-clip="calin-superstar" data-color="#7b3fa6" aria-pressed="true"><img src="../assets/shots/ozbeat-calin-superstar.webp" alt="OZBEAT playing SuperStar by Calin over the music video" loading="lazy" width="1600" height="900"><span><b>Calin</b><small>SuperStar</small></span></button>
-          <button class="pick" type="button" data-clip="viktor-sheen-cigo-a-kava" data-color="#4f8f93" aria-pressed="false"><img src="../assets/shots/ozbeat-viktor-sheen-cigo-a-kava.webp" alt="OZBEAT playing Cígo a káva by Viktor Sheen" loading="lazy" width="1600" height="900"><span><b>Viktor Sheen</b><small>Cígo a káva</small></span></button>
-          <button class="pick" type="button" data-clip="cashanova-bulhar-praha-den-a-noc" data-color="#9a8466" aria-pressed="false"><img src="../assets/shots/ozbeat-cashanova-bulhar-praha-den-a-noc.webp" alt="OZBEAT playing Praha den a noc by Ca$hanova Bulhar" loading="lazy" width="1600" height="900"><span><b>Ca$hanova Bulhar</b><small>Praha den a noc</small></span></button>
-          <button class="pick" type="button" data-clip="churaq-cyril-baroko-2" data-color="#a8322c" aria-pressed="false"><img src="../assets/shots/ozbeat-churaq-cyril-baroko-2.webp" alt="OZBEAT playing Baroko 2 by Churaq Cyril" loading="lazy" width="1600" height="900"><span><b>Churaq Cyril</b><small>Baroko 2</small></span></button>
-          <button class="pick" type="button" data-clip="synced-lyrics-music-video" data-color="#b8456e" aria-pressed="false"><img src="../assets/shots/ozbeat-synced-lyrics-music-video.webp" alt="OZBEAT synced lyrics over a music video" loading="lazy" width="1600" height="900"><span><b data-i18n="pVidT">Texty + video</b><small data-i18n="pVid">Videoklip za texty</small></span></button>
-          <button class="pick" type="button" data-clip="synced-lyrics-pink" data-color="#c0508f" aria-pressed="false"><img src="../assets/shots/ozbeat-synced-lyrics-pink.webp" alt="OZBEAT synced lyrics in pink cover colors" loading="lazy" width="1600" height="900"><span><b data-i18n="pLyrT">Jen texty</b><small data-i18n="pLyr">V barvách obalu</small></span></button>
-          <button class="pick" type="button" data-clip="synced-lyrics-amber" data-color="#c9862e" aria-pressed="false"><img src="../assets/shots/ozbeat-synced-lyrics-amber.webp" alt="OZBEAT synced lyrics in amber cover colors" loading="lazy" width="1600" height="900"><span><b data-i18n="pLyrT">Jen texty</b><small data-i18n="pLyr">V barvách obalu</small></span></button>
-          <button class="pick" type="button" data-clip="synced-lyrics-teal" data-color="#5a9a9a" aria-pressed="false"><img src="../assets/shots/ozbeat-synced-lyrics-teal.webp" alt="OZBEAT synced lyrics in teal cover colors" loading="lazy" width="1600" height="900"><span><b data-i18n="pLyrT">Jen texty</b><small data-i18n="pLyr">V barvách obalu</small></span></button>
+          <button class="pick" type="button" data-clip="live-fire" data-color="#973f49" aria-pressed="true"><img src="../assets/shots/ozbeat-live-fire.webp" alt="OZBEAT live lyrics: the word fire in flickering orange and a name on a red sticker" loading="lazy" width="1600" height="900"><span><b data-i18n="pFireT">Slova, co hoří</b><small data-i18n="pFire">Oheň plápolá, jména dostanou štítek</small></span></button>
+          <button class="pick" type="button" data-clip="live-emko" data-color="#8c645c" aria-pressed="false"><img src="../assets/shots/ozbeat-live-emko.webp" alt="OZBEAT live lyrics: a word with a smiley symbol beside it" loading="lazy" width="1600" height="900"><span><b data-i18n="pSymT">Symboly</b><small data-i18n="pSym">Vedle slov, ke kterým patří</small></span></button>
+          <button class="pick" type="button" data-clip="live-yzomandias" data-color="#4f378c" aria-pressed="false"><img src="../assets/shots/ozbeat-live-yzomandias.webp" alt="OZBEAT live lyrics of El Camino by Yzomandias over the music video" loading="lazy" width="1600" height="900"><span><b>Yzomandias</b><small data-i18n="pYzo">El Camino, přes videoklip</small></span></button>
+          <button class="pick" type="button" data-clip="live-praha" data-color="#6a898c" aria-pressed="false"><img src="../assets/shots/ozbeat-live-praha.webp" alt="OZBEAT live lyrics: Prahou with a stripe in Prague's colors" loading="lazy" width="1600" height="900"><span><b data-i18n="pCityT">Města</b><small data-i18n="pCity">V barvách vlajky</small></span></button>
+          <button class="pick" type="button" data-clip="live-punisher" data-color="#8c5d63" aria-pressed="false"><img src="../assets/shots/ozbeat-live-punisher.webp" alt="OZBEAT live lyrics: one huge word on a sticker" loading="lazy" width="1600" height="900"><span><b data-i18n="pBigT">Velké verše</b><small data-i18n="pBig">Hlasitá slova prásknou</small></span></button>
+          <button class="pick" type="button" data-clip="live-cash" data-color="#8c7a40" aria-pressed="false"><img src="../assets/shots/ozbeat-live-cash.webp" alt="OZBEAT live lyrics: money words in gold" loading="lazy" width="1600" height="900"><span><b data-i18n="pCashT">Prachy</b><small data-i18n="pCash">Slova o penězích ve zlatě</small></span></button>
+          <button class="pick" type="button" data-clip="live-patent" data-color="#8c5555" aria-pressed="false"><img src="../assets/shots/ozbeat-live-patent.webp" alt="OZBEAT live lyrics: a line set like a poster, the main word big" loading="lazy" width="1600" height="900"><span><b data-i18n="pLiveT">Texty naživo</b><small data-i18n="pLive">Verš se skládá jako plakát</small></span></button>
+          <button class="pick" type="button" data-clip="live-haha" data-color="#8c462d" aria-pressed="false"><img src="../assets/shots/ozbeat-live-haha.webp" alt="OZBEAT live lyrics: shouted HA HA HA" loading="lazy" width="1600" height="900"><span><b data-i18n="pAdT">Ad-liby</b><small data-i18n="pAd">Zakřičené, rozštěpené do červené a tyrkysové</small></span></button>
         </div>
       </section>
       <section class="duo">
@@ -469,7 +488,7 @@
         <p data-i18n="duo">Stiskněte Ctrl+D. Obal zůstane na monitoru a texty se zvětší na televizi nebo druhé obrazovce.</p>
         <div class="screens" id="screens">
           <figure><video class="shot" muted loop playsinline preload="none" width="1280" height="720" poster="../assets/shots/ozbeat-calin-superstar-cover.webp" src="../assets/video/ozbeat-calin-superstar-cover.mp4" aria-label="OZBEAT on two screens, main screen: album cover, title and progress of SuperStar by Calin"></video><figcaption data-i18n="scr1">Hlavní obrazovka</figcaption></figure>
-          <figure><video class="shot" muted loop playsinline preload="none" width="1280" height="720" poster="../assets/shots/ozbeat-calin-superstar-lyrics.webp" src="../assets/video/ozbeat-calin-superstar-lyrics.mp4" aria-label="OZBEAT on two screens, second screen: large synced lyrics of SuperStar by Calin"></video><figcaption data-i18n="scr2">Druhá obrazovka</figcaption></figure>
+          <figure><video class="shot" muted loop playsinline preload="none" width="1280" height="720" poster="../assets/shots/ozbeat-live-lyrics-screen.webp" src="../assets/video/ozbeat-live-lyrics-screen.mp4" aria-label="OZBEAT on two screens, second screen: big live lyrics"></video><figcaption data-i18n="scr2">Druhá obrazovka</figcaption></figure>
         </div>
       </section>
       <section class="saver glass" id="screensaver">
@@ -526,6 +545,38 @@
 <script>
 (function () {
   var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // Headings come in like the live lyrics (see .live): each word its own
+  // span, the longest slammed down, the others popping or dropping in.
+  if (!reduce && "IntersectionObserver" in window) {
+    document.querySelectorAll(".hero h1, .watch h2, .duo h2, .saver h2, .about h2").forEach(function (h) {
+      var words = [], walker = document.createTreeWalker(h, NodeFilter.SHOW_TEXT), texts = [];
+      while (walker.nextNode()) texts.push(walker.currentNode);
+      texts.forEach(function (node) {
+        var frag = document.createDocumentFragment();
+        node.textContent.split(/(\s+)/).forEach(function (part) {
+          if (!part) return;
+          if (/^\s+$/.test(part)) { frag.appendChild(document.createTextNode(part)); return; }
+          var w = document.createElement("span");
+          w.className = "w";
+          w.textContent = part;
+          frag.appendChild(w);
+          words.push(w);
+        });
+        node.parentNode.replaceChild(frag, node);
+      });
+      var longest = words.reduce(function (a, w) { return w.textContent.length > a.textContent.length ? w : a; }, words[0]);
+      words.forEach(function (w, i) {
+        w.style.setProperty("--d", i);
+        if (w === longest) w.classList.add("slam");
+        else if (i % 3 === 2) w.classList.add("drop");
+      });
+      h.classList.add("live");
+      new IntersectionObserver(function (es, o) {
+        if (es[0].isIntersecting) { h.classList.add("go"); o.disconnect(); }
+      }, { threshold: 0.6 }).observe(h);
+    });
+  }
 
   // The background flows in the colors of whatever is on screen: the front card up top, the clip further down.
   var root = document.documentElement, deckColor = null, clipColor = null, clipOnScreen = false;
