@@ -33,6 +33,9 @@ pub enum LyricsStyle {
     Lens,
     /// Whole lines under a magnifying glass gliding along the word being sung.
     Loupe,
+    /// The line set as a poster that builds up word by word, each word moving
+    /// by what it says and how it's sung, shaken by the beat.
+    Live,
 }
 
 /// Where the music video plays once Ctrl+D (or the screensaver) puts the
