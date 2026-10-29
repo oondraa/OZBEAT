@@ -84,7 +84,7 @@ pub fn for_word(word: &str) -> Option<char> {
 }
 
 /// Lowercase without diacritics, so "LÁSKA", "laska" and "láska" match.
-fn fold(word: &str) -> String {
+pub(crate) fn fold(word: &str) -> String {
     word.chars()
         .flat_map(char::to_lowercase)
         .map(|c| match c {

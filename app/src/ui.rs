@@ -32,6 +32,8 @@ use crate::control::Control;
 use crate::icons;
 use crate::volume::VolumeHud;
 
+mod live;
+
 /// How long the lyrics take to scroll to the next line.
 const LYRIC_SCROLL: Duration = Duration::from_millis(450);
 /// How long cover, photo, background and colors take to blend into new ones.
@@ -200,6 +202,8 @@ pub struct VisualApp {
     /// The lyrics screen clicked: the video big, the lyrics small below.
     clip_focus: bool,
     clip_focus_anim: Tween,
+    /// Which panel is open: settings (Ctrl+S) or modes (Ctrl+A).
+    panel: setup::Panel,
     /// Which window shows the settings panel: the one Ctrl+S was pressed in.
     settings_screen: Screen,
     /// Lyrics on screen (0 -> 1): in when there is something to sing, out
@@ -359,6 +363,7 @@ impl VisualApp {
             clip: None,
             clip_focus: false,
             clip_focus_anim: Tween::new(FOCUS_OPEN, FOCUS_CLOSE),
+            panel: setup::Panel::Settings,
             settings_screen: Screen::Main,
             lyrics_shown: Tween::new(LYRICS_IN, LYRICS_OUT),
             lyrics_seen: None,
@@ -1043,12 +1048,15 @@ impl VisualApp {
     }
 
     /// The keys that work the same in every window: Ctrl+S opens the settings
-    /// there, Ctrl+D, Ctrl+L, Ctrl+K and the playback keys. Returns whether Esc was
-    /// pressed, which each window handles its own way.
+    /// there and Ctrl+A the modes, Ctrl+D, Ctrl+L, Ctrl+K and the playback keys.
+    /// Returns whether Esc was pressed, which each window handles its own way.
     fn handle_shortcuts(&mut self, ctx: &egui::Context, screen: Screen) -> bool {
-        let (settings_key, mirror_key, style_key, card_key, escape) = ctx.input(|i| {
+        // Ctrl+A in a text field selects its text instead.
+        let typing = ctx.egui_wants_keyboard_input();
+        let (settings_key, modes_key, mirror_key, style_key, card_key, escape) = ctx.input(|i| {
             (
                 i.modifiers.command && i.key_pressed(egui::Key::S),
+                i.modifiers.command && i.key_pressed(egui::Key::A) && !typing,
                 i.modifiers.command && i.key_pressed(egui::Key::D),
                 i.modifiers.command && i.key_pressed(egui::Key::L),
                 i.modifiers.command && i.key_pressed(egui::Key::K),
@@ -1065,7 +1073,8 @@ impl VisualApp {
                     LyricsStyle::Words => LyricsStyle::Drum,
                     LyricsStyle::Drum => LyricsStyle::Lens,
                     LyricsStyle::Lens => LyricsStyle::Loupe,
-                    LyricsStyle::Loupe => LyricsStyle::Words,
+                    LyricsStyle::Loupe => LyricsStyle::Live,
+                    LyricsStyle::Live => LyricsStyle::Words,
                 };
                 s.save();
                 s.lyrics
@@ -1075,18 +1084,14 @@ impl VisualApp {
                 LyricsStyle::Drum => "Texty na válci",
                 LyricsStyle::Lens => "Texty pod čočkou",
                 LyricsStyle::Loupe => "Texty pod lupou",
+                LyricsStyle::Live => "Texty naživo",
             });
         }
         if settings_key {
-            if !self.settings_open {
-                self.settings_open = true;
-                self.settings_screen = screen;
-            } else if self.settings_screen != screen {
-                // Open on the other screen: bring it over here.
-                self.settings_screen = screen;
-            } else {
-                self.close_settings();
-            }
+            self.toggle_panel(setup::Panel::Settings, screen);
+        }
+        if modes_key {
+            self.toggle_panel(setup::Panel::Modes, screen);
         }
         if mirror_key {
             self.toggle_mirror(ctx);
@@ -1269,6 +1274,19 @@ impl VisualApp {
             self.lyrics_focus = !self.lyrics_focus;
             self.focus_toggled = Some(Instant::now());
         }
+    }
+
+    /// Opens `panel` in `screen`'s window, or closes it when it's open there
+    /// already. Open on the other screen, it comes over; the other panel
+    /// open, this one takes its place.
+    fn toggle_panel(&mut self, panel: setup::Panel, screen: Screen) {
+        if self.settings_open && self.settings_screen == screen && self.panel == panel {
+            self.close_settings();
+            return;
+        }
+        self.settings_open = true;
+        self.settings_screen = screen;
+        self.panel = panel;
     }
 
     fn close_settings(&mut self) {
@@ -1598,6 +1616,7 @@ impl VisualApp {
                 panel,
                 self.settings_open,
                 &self.settings,
+                self.panel,
                 first_run,
                 &f.devices,
                 f.audio.as_ref(),
@@ -2117,6 +2136,7 @@ fn draw_lyrics_shade(
         (Some(_), LyricsStyle::Words | LyricsStyle::Lens) => size * WORD_SCALE * 1.7,
         (Some(_), LyricsStyle::Loupe) => size * LOUPE_SCALE * 2.8,
         (Some(_), LyricsStyle::Drum) => size * DRUM_SCALE * 3.2,
+        (Some(_), LyricsStyle::Live) => live::reach(size),
     };
     draw_band(painter, rect, center_y, reach, 175.0 * video);
 }
@@ -2146,6 +2166,15 @@ fn draw_timed_lyrics(
         LyricsStyle::Drum => draw_drum(painter, rect, lyrics, position, center_y, size, vivid, video),
         LyricsStyle::Lens => draw_lens(painter, rect, lyrics, position, center_y, size, vivid, video),
         LyricsStyle::Loupe => draw_loupe(painter, rect, lyrics, position, center_y, size, vivid, video),
+        LyricsStyle::Live => {
+            // A mic hears the room even when nothing plays, like the pulse.
+            let playing = f.now_playing.as_ref().is_some_and(|np| np.state == PlaybackState::Playing);
+            let groove = match f.audio.as_ref().map(Capture::levels).filter(|l| playing && l.signal) {
+                Some(l) => live::Groove { beat: l.beat, bass: l.bass },
+                None => live::Groove { beat: f.pulse.min(1.0), bass: f.pulse.min(1.0) },
+            };
+            live::draw_live(painter, rect, lyrics, position, center_y, size, f.palette, video, groove)
+        }
     }
 }
 
@@ -3127,6 +3156,19 @@ pub(crate) fn install_fonts(ctx: &egui::Context) {
         .font_data
         .insert(HEAVY.into(), Arc::new(FontData::from_static(HEAVY_FONT)));
     fonts.families.insert(FontFamily::Name(HEAVY.into()), heavy);
+    // Faces the live lyrics dress names in, from the system when it has
+    // them, else the heavy one.
+    for (name, candidates) in live::looks::FACES {
+        let mut family = Vec::new();
+        if let Some(bytes) = candidates.iter().find_map(|p| std::fs::read(p).ok()) {
+            fonts
+                .font_data
+                .insert((*name).into(), Arc::new(FontData::from_owned(bytes)));
+            family.push((*name).to_owned());
+        }
+        family.extend(fonts.families[&FontFamily::Name(HEAVY.into())].iter().cloned());
+        fonts.families.insert(FontFamily::Name((*name).into()), family);
+    }
     fonts.font_data.insert(
         icons::FONT.into(),
         Arc::new(FontData::from_static(icons::FONT_BYTES)),
@@ -3233,6 +3275,10 @@ mod tests {
                 line(14.0, "Peníze v kapse, auto je rychlý"),
                 line(17.0, "Celá noc a já pořád jedu dál"),
                 line(20.0, "Srdce bije, město nespí"),
+                line(23.0, "Gucci, Prada, ankh a Rihanna"),
+                line(27.0, "Yzomandias v Nike, Rolex a A$AP"),
+                line(31.0, "Zítra ráno odletím a ty odjedeš"),
+                line(37.0, ""),
             ],
             plain: None,
             estimated: false,
@@ -3246,8 +3292,8 @@ mod tests {
         };
         let mut atlas = Atlas::default();
         let palettes = [[0.95, 0.45, 0.35], [0.2, 0.45, 0.95]];
-        let shots = [10.05, 10.4, 11.2, 12.1, 13.0, 15.0];
-        let styles = [LyricsStyle::Words, LyricsStyle::Drum, LyricsStyle::Lens, LyricsStyle::Loupe];
+        let shots = [10.05, 10.4, 11.2, 12.1, 13.0, 15.0, 25.5, 30.0, 33.2, 33.9];
+        let styles = [LyricsStyle::Words, LyricsStyle::Drum, LyricsStyle::Lens, LyricsStyle::Loupe, LyricsStyle::Live];
         for (n, (style, at)) in styles
             .into_iter()
             .flat_map(|style| shots.map(|at| (style, at)))
@@ -3275,6 +3321,11 @@ mod tests {
                     LyricsStyle::Drum => draw_drum(&painter, rect, &lyrics, position, center, size, vivid, video),
                     LyricsStyle::Lens => draw_lens(&painter, rect, &lyrics, position, center, size, vivid, video),
                     LyricsStyle::Loupe => draw_loupe(&painter, rect, &lyrics, position, center, size, vivid, video),
+                    LyricsStyle::Live => {
+                        let palette = [vivid, palettes[(n + 1) % 2], vivid];
+                        let groove = live::Groove { beat: 0.6, bass: 0.5 };
+                        live::draw_live(&painter, rect, &lyrics, position, center, size, palette, video, groove)
+                    }
                 }
             };
             // The first run loads the fonts.
@@ -3295,6 +3346,7 @@ mod tests {
                 LyricsStyle::Drum => "drum",
                 LyricsStyle::Lens => "lens",
                 LyricsStyle::Loupe => "loupe",
+                LyricsStyle::Live => "live",
             };
             image.save(dir.join(format!("{kind}{}.png", n % shots.len()))).unwrap();
         }
@@ -3403,6 +3455,11 @@ mod tests {
                 now_playing: None,
             },
         ];
+        // MV_TEST_MODES draws the modes panel (Ctrl+A) instead.
+        let (panel, name) = match std::env::var_os("MV_TEST_MODES") {
+            Some(_) => (setup::Panel::Modes, "modes.png"),
+            None => (setup::Panel::Settings, "settings.png"),
+        };
         let size = Vec2::new(1280.0, 1000.0);
         let input = || egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
@@ -3432,7 +3489,7 @@ mod tests {
                     mesh
                 }));
                 painter.rect_filled(rect, 0.0, Color32::from_black_alpha(70));
-                setup::show(ui.ctx(), 1.0, true, &settings, false, &devices, None, None);
+                setup::show(ui.ctx(), 1.0, true, &settings, panel, false, &devices, None, None);
             });
             for (id, delta) in &output.textures_delta.set {
                 atlas.apply(*id, delta);
@@ -3446,6 +3503,6 @@ mod tests {
                 rasterize(&mut image, &mesh, &atlas);
             }
         }
-        image.save(dir.join("settings.png")).unwrap();
+        image.save(dir.join(name)).unwrap();
     }
 }

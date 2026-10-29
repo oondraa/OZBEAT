@@ -1,5 +1,6 @@
-//! The setup panel: shown on first run, and any time later with Ctrl+S.
-//! Every change is saved immediately.
+//! The setup panel: shown on first run, and any time later with Ctrl+S
+//! (settings) or Ctrl+A (modes: what to see). Every change is saved
+//! immediately.
 
 use std::sync::Arc;
 
@@ -41,6 +42,15 @@ const LIGHT: (char, Color32) = ('\u{e2dc}', Color32::from_rgb(0xF5, 0xC5, 0x18))
 const CONTROL: (char, Color32) = ('\u{e298}', Color32::from_rgb(0x2E, 0xC4, 0xD6));
 const UPDATE: (char, Color32) = ('\u{e6a2}', Color32::from_rgb(0x2F, 0xC2, 0x7A));
 
+/// Which of the panels is open.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Panel {
+    /// Ctrl+S: where the music comes from, sound, lights, updates.
+    Settings,
+    /// Ctrl+A: what to see, such as how the lyrics look.
+    Modes,
+}
+
 /// Draws the panel. Returns `false` once the user confirms with "Hotovo".
 /// The panel is dark frosted glass over the dimmed visuals (see `ui`), with
 /// a bright rim; the options sit on cards, each with a colored icon.
@@ -55,6 +65,7 @@ pub fn show(
     progress: f32,
     interactive: bool,
     settings: &SharedSettings,
+    panel: Panel,
     first_run: bool,
     devices: &[Device],
     audio: Option<&Capture>,
@@ -107,7 +118,7 @@ pub fn show(
         .show(ctx, |ui| {
             ui.multiply_opacity(opacity);
             ui.set_width(WIDTH);
-            block(ui, reveal(0), |ui| header(ui, first_run, &mut done));
+            block(ui, reveal(0), |ui| header(ui, panel, first_run, &mut done));
             ui.add_space(14.0);
 
             // Header and footer stay put; the cards scroll on small windows.
@@ -119,6 +130,17 @@ pub fn show(
                     let reveal = |i| reveal(1 + i);
                     ui.horizontal_top(|ui| {
                         ui.spacing_mut().item_spacing.x = GAP;
+                        if panel == Panel::Modes && !first_run {
+                            ui.vertical(|ui| {
+                                ui.set_width(column);
+                                lyrics_modes(ui, &mut s, &reveal);
+                            });
+                            ui.vertical(|ui| {
+                                ui.set_width(column);
+                                clips(ui, &mut s, &reveal);
+                            });
+                            return;
+                        }
                         ui.vertical(|ui| {
                             ui.set_width(column);
                             listening(ui, &mut s, devices, audio, &reveal);
@@ -131,7 +153,13 @@ pub fn show(
                         });
                         ui.vertical(|ui| {
                             ui.set_width(column);
-                            showing(ui, &mut s, &reveal);
+                            // The first time, everything at once.
+                            if first_run {
+                                lyrics_modes(ui, &mut s, &reveal);
+                                clips(ui, &mut s, &reveal);
+                            }
+                            light(ui, &mut s, &reveal);
+                            moving(ui, &mut s, &reveal);
                         });
                     });
                 });
@@ -198,13 +226,13 @@ fn draw_rim(painter: &egui::Painter, rect: Rect, opacity: f32, shine: f32) {
 }
 
 /// The title and the "Hotovo" button.
-fn header(ui: &mut egui::Ui, first_run: bool, done: &mut bool) {
+fn header(ui: &mut egui::Ui, panel: Panel, first_run: bool, done: &mut bool) {
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
-            let title = if first_run {
-                "Vítej v OZBEAT"
-            } else {
-                "Nastavení"
+            let title = match (first_run, panel) {
+                (true, _) => "Vítej v OZBEAT",
+                (false, Panel::Settings) => "Nastavení",
+                (false, Panel::Modes) => "Módy",
             };
             ui.label(
                 RichText::new(title)
@@ -212,10 +240,10 @@ fn header(ui: &mut egui::Ui, first_run: bool, done: &mut bool) {
                     .strong()
                     .color(Color32::WHITE),
             );
-            let hint = if first_run {
-                "Pár voleb a jedeme. Kdykoli se sem vrátíš přes Ctrl+S."
-            } else {
-                "Všechno se ukládá hned."
+            let hint = match (first_run, panel) {
+                (true, _) => "Pár voleb a jedeme. Nastavení je pak pod Ctrl+S, módy pod Ctrl+A.",
+                (false, Panel::Settings) => "Všechno se ukládá hned. Co chceš vidět, je v módech (Ctrl+A).",
+                (false, Panel::Modes) => "Co chceš vidět. Ukládá se hned, nastavení je pod Ctrl+S.",
             };
             ui.label(RichText::new(hint).color(QUIET));
         });
@@ -376,6 +404,7 @@ fn footer(ui: &mut egui::Ui) {
         ui.spacing_mut().item_spacing.x = 6.0;
         for (keys, what) in [
             ("Ctrl+S", "nastavení"),
+            ("Ctrl+A", "módy"),
             ("Ctrl+D", "druhá obrazovka"),
             ("Ctrl+L", "styl textů"),
             ("Ctrl+K", "sdílet kartu"),
@@ -400,8 +429,8 @@ fn footer(ui: &mut egui::Ui) {
     });
 }
 
-/// The left column: where the music comes from and how the picture moves
-/// with it. `reveal` gives each card's opacity (see `show`).
+/// The left column: where the music comes from and what it is heard by.
+/// `reveal` gives each card's opacity (see `show`).
 fn listening(
     ui: &mut egui::Ui,
     s: &mut Settings,
@@ -472,6 +501,10 @@ fn listening(
         });
     });
 
+}
+
+/// How the picture moves with the music, and the playback controls.
+fn moving(ui: &mut egui::Ui, s: &mut Settings, reveal: &dyn Fn(usize) -> f32) {
     block(ui, reveal(2), |ui| {
         card(ui, |ui| {
             heading(
@@ -515,7 +548,8 @@ fn listening(
 }
 
 /// The right column: lyrics, videos and the light.
-fn showing(ui: &mut egui::Ui, s: &mut Settings, reveal: &dyn Fn(usize) -> f32) {
+/// How the lyrics look, on the modes panel.
+fn lyrics_modes(ui: &mut egui::Ui, s: &mut Settings, reveal: &dyn Fn(usize) -> f32) {
     block(ui, reveal(3), |ui| {
         card(ui, |ui| {
             heading(
@@ -532,6 +566,7 @@ fn showing(ui: &mut egui::Ui, s: &mut Settings, reveal: &dyn Fn(usize) -> f32) {
                     (LyricsStyle::Drum, "Válec"),
                     (LyricsStyle::Lens, "Čočka"),
                     (LyricsStyle::Loupe, "Lupa"),
+                    (LyricsStyle::Live, "Živě"),
                 ],
             );
             switch(
@@ -543,6 +578,10 @@ fn showing(ui: &mut egui::Ui, s: &mut Settings, reveal: &dyn Fn(usize) -> f32) {
         });
     });
 
+}
+
+/// Music videos, on the modes panel.
+fn clips(ui: &mut egui::Ui, s: &mut Settings, reveal: &dyn Fn(usize) -> f32) {
     // The Store's copy can't play music videos, see `pipeline`.
     block(ui, reveal(4), |ui| if !update::packaged() {
         card(ui, |ui| {
@@ -573,6 +612,10 @@ fn showing(ui: &mut egui::Ui, s: &mut Settings, reveal: &dyn Fn(usize) -> f32) {
         });
     });
 
+}
+
+/// The WLED light, on the settings panel.
+fn light(ui: &mut egui::Ui, s: &mut Settings, reveal: &dyn Fn(usize) -> f32) {
     block(ui, reveal(5), |ui| {
         card(ui, |ui| {
             heading(
