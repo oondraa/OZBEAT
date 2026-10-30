@@ -275,6 +275,8 @@ mod tests {
             device: Some(device.into()),
             volume: Some(volume),
             muted: false,
+            shuffle: None,
+            repeat: None,
         }
     }
 

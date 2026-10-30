@@ -7,7 +7,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use mv_core::{NowPlaying, SourceId};
+use mv_core::{NowPlaying, Repeat, SourceId};
 
 /// One Ctrl+Up/Down step on a BluOS speaker, in percent.
 const STEP: f32 = 0.03;
@@ -19,6 +19,8 @@ enum Command {
     Volume(SourceId, u8),
     PlayPause(SourceId),
     Skip(SourceId, bool),
+    Shuffle(SourceId, bool),
+    Repeat(SourceId, Repeat),
     #[cfg(windows)]
     SystemVolume(bool),
 }
@@ -83,6 +85,16 @@ impl Control {
     pub fn skip(&self, source: Option<&SourceId>, forward: bool) -> bool {
         source.is_some_and(|s| self.tx.send(Command::Skip(s.clone(), forward)).is_ok())
     }
+
+    /// Turns shuffle on or off. `false` when there is nothing to control.
+    pub fn shuffle(&self, source: Option<&SourceId>, on: bool) -> bool {
+        source.is_some_and(|s| self.tx.send(Command::Shuffle(s.clone(), on)).is_ok())
+    }
+
+    /// Sets what the player repeats. `false` when there is nothing to control.
+    pub fn repeat(&self, source: Option<&SourceId>, repeat: Repeat) -> bool {
+        source.is_some_and(|s| self.tx.send(Command::Repeat(s.clone(), repeat)).is_ok())
+    }
 }
 
 fn run(rx: &Receiver<Command>) {
@@ -119,6 +131,18 @@ fn execute(command: Command) {
             "bluos" => mv_sources::bluos::skip(&source.instance, *forward),
             #[cfg(windows)]
             "smtc" => mv_sources::smtc::skip(&source.instance, *forward).map_err(|e| e.to_string()),
+            _ => Ok(()),
+        },
+        Command::Shuffle(source, on) => match source.kind {
+            "bluos" => mv_sources::bluos::set_shuffle(&source.instance, *on),
+            #[cfg(windows)]
+            "smtc" => mv_sources::smtc::set_shuffle(&source.instance, *on).map_err(|e| e.to_string()),
+            _ => Ok(()),
+        },
+        Command::Repeat(source, repeat) => match source.kind {
+            "bluos" => mv_sources::bluos::set_repeat(&source.instance, *repeat),
+            #[cfg(windows)]
+            "smtc" => mv_sources::smtc::set_repeat(&source.instance, *repeat).map_err(|e| e.to_string()),
             _ => Ok(()),
         },
         #[cfg(windows)]

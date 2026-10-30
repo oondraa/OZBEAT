@@ -12,6 +12,7 @@ mod control;
 mod frameless;
 mod hotkey;
 mod icons;
+mod modebar;
 mod pipeline;
 mod settings;
 mod setup;

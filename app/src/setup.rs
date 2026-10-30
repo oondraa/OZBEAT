@@ -13,7 +13,7 @@ use mv_core::{Device, PlaybackState};
 
 use crate::anim::{ease_in_cubic, ease_out_cubic, glow, remap, spring};
 use crate::icons;
-use crate::settings::{AudioMode, ClipScreen, LyricsStyle, Settings, SharedSettings};
+use crate::settings::{AudioMode, ClipScreen, Settings, SharedSettings};
 use crate::update::{self, SharedUpdate, Status};
 
 /// The dot in the OZBEAT logo.
@@ -556,18 +556,7 @@ fn lyrics_modes(ui: &mut egui::Ui, s: &mut Settings, reveal: &dyn Fn(usize) -> f
                 ui,
                 LYRICS,
                 "Texty",
-                "Jak se ukazují texty písniček, které mají časování.",
-            );
-            segmented(
-                ui,
-                &mut s.lyrics,
-                &[
-                    (LyricsStyle::Words, "Po slovech"),
-                    (LyricsStyle::Drum, "Válec"),
-                    (LyricsStyle::Lens, "Čočka"),
-                    (LyricsStyle::Loupe, "Lupa"),
-                    (LyricsStyle::Live, "Živě"),
-                ],
+                "Styl textů se přepíná na liště pod Ctrl+A, nebo dokola Ctrl+L.",
             );
             switch(
                 ui,
