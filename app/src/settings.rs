@@ -36,6 +36,30 @@ pub enum LyricsStyle {
     /// The line set as a poster that builds up word by word, each word moving
     /// by what it says and how it's sung, shaken by the beat.
     Live,
+    /// Typed out letter by letter as it's sung, black on a white page.
+    Typing,
+    /// Whole words as they're sung, page and type swapping black and white on each.
+    Flip,
+    /// Three short centered rows, whole words as they're sung, on a white page.
+    Block,
+    /// Neon words stacked behind a rainy window.
+    Neon,
+    /// Heavy capitals on a red CRT, bulging under the glass, scanlines over.
+    Crt,
+    /// One huge word at a time on light gray.
+    Giant,
+    /// The block beside a CD case, the cover spinning on the disc.
+    Disc,
+    /// The music video under the line and a player like Spotify's, buttons working.
+    Player,
+}
+
+impl LyricsStyle {
+    /// The styles that are a whole picture of their own: they take the
+    /// screen right away, with no cover beside them and no video under them.
+    pub fn full_screen(self) -> bool {
+        !matches!(self, Self::Words | Self::Drum | Self::Lens | Self::Loupe | Self::Live)
+    }
 }
 
 /// Where the music video plays once Ctrl+D (or the screensaver) puts the

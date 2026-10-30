@@ -16,6 +16,16 @@ pub enum PlaybackState {
     Buffering,
 }
 
+/// What the player does at the end of the queue or the song.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Repeat {
+    Off,
+    /// The whole queue again.
+    All,
+    /// The same song again.
+    One,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Track {
     pub title: String,
@@ -38,6 +48,9 @@ pub struct NowPlaying {
     /// The player's own volume (0..1), when the source reports one.
     pub volume: Option<f32>,
     pub muted: bool,
+    /// Shuffle and repeat, when the source tells them.
+    pub shuffle: Option<bool>,
+    pub repeat: Option<Repeat>,
 }
 
 impl NowPlaying {
@@ -235,6 +248,8 @@ mod tests {
             device: None,
             volume: None,
             muted: false,
+            shuffle: None,
+            repeat: None,
         }
     }
 

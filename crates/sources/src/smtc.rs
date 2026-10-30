@@ -9,13 +9,14 @@ use std::path::PathBuf;
 use std::thread;
 use std::time::{Duration, SystemTime};
 
-use mv_core::{NowPlaying, PlaybackState, SourceEvent, SourceId, Track};
+use mv_core::{NowPlaying, PlaybackState, Repeat, SourceEvent, SourceId, Track};
 use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSession as Session,
     GlobalSystemMediaTransportControlsSessionManager as Manager,
     GlobalSystemMediaTransportControlsSessionMediaProperties as Properties,
     GlobalSystemMediaTransportControlsSessionPlaybackStatus as Status,
 };
+use windows::Media::MediaPlaybackAutoRepeatMode as RepeatMode;
 use windows::Storage::Streams::DataReader;
 
 use crate::EventSender;
@@ -103,6 +104,33 @@ pub fn skip(app: &str, forward: bool) -> windows::core::Result<()> {
     Ok(())
 }
 
+/// Turns shuffle on or off.
+pub fn set_shuffle(app: &str, on: bool) -> windows::core::Result<()> {
+    let manager = Manager::RequestAsync()?.join()?;
+    for session in manager.GetSessions()? {
+        if session.SourceAppUserModelId()? == app {
+            session.TryChangeShuffleActiveAsync(on)?.join()?;
+        }
+    }
+    Ok(())
+}
+
+/// Sets what the player repeats.
+pub fn set_repeat(app: &str, repeat: Repeat) -> windows::core::Result<()> {
+    let mode = match repeat {
+        Repeat::Off => RepeatMode::None,
+        Repeat::All => RepeatMode::List,
+        Repeat::One => RepeatMode::Track,
+    };
+    let manager = Manager::RequestAsync()?.join()?;
+    for session in manager.GetSessions()? {
+        if session.SourceAppUserModelId()? == app {
+            session.TryChangeAutoRepeatModeAsync(mode)?.join()?;
+        }
+    }
+    Ok(())
+}
+
 fn read_session(
     session: &Session,
     app: &str,
@@ -121,7 +149,14 @@ fn read_session(
     };
     track.art_url = thumbnail.url_for(&track, &props);
 
-    let state = match session.GetPlaybackInfo()?.PlaybackStatus()? {
+    let info = session.GetPlaybackInfo()?;
+    let shuffle = info.IsShuffleActive().and_then(|v| v.Value()).ok();
+    let repeat = info.AutoRepeatMode().and_then(|v| v.Value()).ok().map(|mode| match mode {
+        RepeatMode::Track => Repeat::One,
+        RepeatMode::List => Repeat::All,
+        _ => Repeat::Off,
+    });
+    let state = match info.PlaybackStatus()? {
         Status::Playing => PlaybackState::Playing,
         Status::Paused => PlaybackState::Paused,
         Status::Opened | Status::Changing => PlaybackState::Buffering,
@@ -156,6 +191,8 @@ fn read_session(
         // Windows doesn't tell an app's volume through the media session.
         volume: None,
         muted: false,
+        shuffle,
+        repeat,
     }))
 }
 

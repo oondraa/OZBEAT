@@ -26,6 +26,7 @@ use crate::pipeline::SharedScene;
 use crate::settings::{ClipScreen, LyricsStyle, Settings, SharedSettings};
 use crate::setup::{self, BRAND_BLUE};
 use crate::titlebar::TitleBar;
+use crate::modebar::{ModeBar, Pick};
 use crate::transport::{Press, Transport};
 use crate::update::{self, SharedUpdate};
 use crate::control::Control;
@@ -33,6 +34,8 @@ use crate::icons;
 use crate::volume::VolumeHud;
 
 mod live;
+mod screen;
+mod typing;
 
 /// How long the lyrics take to scroll to the next line.
 const LYRIC_SCROLL: Duration = Duration::from_millis(450);
@@ -220,6 +223,12 @@ pub struct VisualApp {
     previous_track: Option<(NowPlaying, Instant)>,
     transport: Transport,
     mirror_transport: Transport,
+    /// Where the player style's buttons were last drawn in the main window.
+    screen_buttons: Vec<Rect>,
+    /// Ctrl+A's bar of lyric styles, in each window, and the window it's open in.
+    mode_bar: ModeBar,
+    mirror_mode_bar: ModeBar,
+    mode_bar_on: Option<Screen>,
     /// Raised by Ctrl+Alt+T anywhere in Windows; `None` in the screensaver.
     overlay_key: Option<Arc<AtomicBool>>,
     /// The window turned into the lyrics over the desktop, and whether it
@@ -372,6 +381,10 @@ impl VisualApp {
             previous_track: None,
             transport: Transport::default(),
             mirror_transport: Transport::default(),
+            screen_buttons: Vec::new(),
+            mode_bar: ModeBar::default(),
+            mirror_mode_bar: ModeBar::default(),
+            mode_bar_on: None,
             overlay_key: (mode == Mode::Window).then(|| crate::hotkey::spawn(cc.egui_ctx.clone())),
             overlay: None,
             overlay_ready: false,
@@ -740,6 +753,106 @@ impl VisualApp {
         }
     }
 
+    /// A whole-screen lyric style (see [`LyricsStyle::full_screen`]) over the
+    /// window, when the song has timed lyrics and the player says where it
+    /// is. Returns whether it drew.
+    fn draw_full_style(&mut self, ui: &mut egui::Ui, rect: Rect, f: &FrameData, np: &NowPlaying) -> bool {
+        let lyrics = f
+            .enrichment
+            .as_ref()
+            .and_then(|e| e.lyrics.as_ref())
+            .filter(|l| !l.synced.is_empty());
+        let (Some(lyrics), Some(position)) = (lyrics, f.lyrics_position) else {
+            return false;
+        };
+        let painter = ui.painter().clone();
+        let (center, size) = (rect.center().y, big_lyrics_size(rect));
+        let cover = self
+            .art
+            .layers(|t| t.cover.as_ref())
+            .into_iter()
+            .flatten()
+            .last()
+            .map(|(t, _)| t.id());
+        let scene = screen::Scene {
+            rect,
+            lyrics,
+            position,
+            song_position: f.position,
+            np,
+            time: f.time,
+            palette: f.palette,
+            beat: groove(f).beat,
+            cover,
+            clip: f.clip,
+        };
+        match f.lyrics_style {
+            LyricsStyle::Typing | LyricsStyle::Flip => {
+                let flip = f.lyrics_style == LyricsStyle::Flip;
+                draw_typing_page(&painter, rect, f, 1.0);
+                typing::draw_typing(&painter, rect, lyrics, position, center, size, 1.0, 0.0, flip);
+            }
+            LyricsStyle::Block => {
+                typing::draw_page(&painter, rect, 1.0, false);
+                typing::draw_block(&painter, rect, lyrics, position, center, size, 1.0, 0.0);
+            }
+            LyricsStyle::Neon => screen::draw_neon(&painter, &scene),
+            LyricsStyle::Crt => screen::draw_crt(&painter, &scene),
+            LyricsStyle::Giant => screen::draw_giant(&painter, &scene),
+            LyricsStyle::Disc => screen::draw_disc(&painter, &scene, size),
+            LyricsStyle::Player => {
+                let (hover, click) = ui.input(|i| {
+                    let click = i.pointer.primary_clicked().then(|| i.pointer.interact_pos());
+                    (i.pointer.hover_pos(), click.flatten())
+                });
+                let buttons = screen::draw_player(&painter, &scene, hover);
+                let at = |p: Pos2| buttons.iter().find(|(r, _)| r.contains(p)).map(|(_, a)| *a);
+                if hover.and_then(at).is_some() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+                if let Some(action) = click.and_then(at) {
+                    self.player_action(action, np);
+                }
+                self.screen_buttons = buttons.into_iter().map(|(r, _)| r).collect();
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    /// Whether the mouse is on the player style's buttons, so a click there
+    /// doesn't also count for what lies under them.
+    fn over_screen_buttons(&self, ctx: &egui::Context) -> bool {
+        self.settings.lock().unwrap().lyrics == LyricsStyle::Player
+            && ctx
+                .input(|i| i.pointer.interact_pos())
+                .is_some_and(|p| self.screen_buttons.iter().any(|r| r.contains(p)))
+    }
+
+    /// A button of the player style pressed: shuffle and repeat go to the
+    /// player, the rest work like the on-screen buttons.
+    fn player_action(&mut self, action: screen::Action, np: &NowPlaying) {
+        use mv_core::Repeat;
+        let source = self.scene.lock().unwrap().source.clone();
+        let done = match action {
+            screen::Action::PlayPause => return self.playback(Press::PlayPause),
+            screen::Action::Previous => return self.playback(Press::Previous),
+            screen::Action::Next => return self.playback(Press::Next),
+            screen::Action::Shuffle => self.control.shuffle(source.as_ref(), np.shuffle != Some(true)),
+            screen::Action::Repeat => {
+                let next = match np.repeat.unwrap_or(Repeat::Off) {
+                    Repeat::Off => Repeat::All,
+                    Repeat::All => Repeat::One,
+                    Repeat::One => Repeat::Off,
+                };
+                self.control.repeat(source.as_ref(), next)
+            }
+        };
+        if !done {
+            self.show_toast("Nic nehraje");
+        }
+    }
+
     /// Notices a new song: the last one's titles and lyrics fade out from
     /// where they were, instead of the screen cutting to the new one.
     fn follow_track(&mut self, now_playing: Option<&NowPlaying>, idle: bool) {
@@ -838,6 +951,11 @@ impl VisualApp {
             draw_idle(&painter, rect, f.time);
             return;
         };
+        // A whole-screen style takes the window, unless Ctrl+D sent the lyrics away.
+        let elsewhere = matches!(content, Content::Main { split, .. } if split >= 0.5);
+        if !elsewhere && f.lyrics_style.full_screen() && self.draw_full_style(ui, rect, f, np) {
+            return;
+        }
         // The video plays where the settings put it; in the main window it
         // gives way as Ctrl+D moves it under the lyrics.
         let share = match content {
@@ -927,13 +1045,18 @@ impl VisualApp {
                     painter.multiply_opacity(video * (1.0 - hidden));
                     draw_clip_caption(&painter, rect, np);
                 }
+                // Typed lyrics own the screen on a white page while they hide the cover.
+                let page = typing_page(f) * hidden;
+                if !gone {
+                    draw_typing_page(&painter, rect, f, page);
+                }
                 if let (false, Some((lyrics, at, line, alpha))) = (gone, outgoing) {
                     let (center_y, size) = lyrics_placement(rect, focus);
-                    draw_outgoing(ui, rect, f, video, lyrics, at, line, center_y, size, alpha);
+                    draw_outgoing(ui, rect, f, video, lyrics, at, line, center_y, size, alpha, page);
                 }
                 if let (false, Some(lyrics), Some(scroll), true) = (gone, synced, scroll, ready > 0.0) {
                     let (center_y, size) = lyrics_placement(rect, focus);
-                    draw_lyrics_shade(&painter, rect, f, center_y, size, video * ready);
+                    draw_lyrics_shade(&painter, rect, f, center_y, size, video * ready * (1.0 - page));
                     let draw = |ui: &mut egui::Ui| {
                         if focus > 0.0 && focus < 1.0 {
                             // Growing: laid out once at the full size and scaled,
@@ -944,12 +1067,12 @@ impl VisualApp {
                                 let mut painter = ui.painter().clone();
                                 painter.multiply_opacity(ready);
                                 let y = rect.center().y;
-                                draw_timed_lyrics(&painter, rect, f, f.lyrics_position, video, lyrics, scroll, y, big);
+                                draw_timed_lyrics(&painter, rect, f, f.lyrics_position, video, lyrics, scroll, y, big, page);
                             });
                         } else {
                             let mut painter = ui.painter().clone();
                             painter.multiply_opacity(ready);
-                            draw_timed_lyrics(&painter, rect, f, f.lyrics_position, video, lyrics, scroll, center_y, size);
+                            draw_timed_lyrics(&painter, rect, f, f.lyrics_position, video, lyrics, scroll, center_y, size, page);
                         }
                     };
                     match leaving {
@@ -981,17 +1104,20 @@ impl VisualApp {
                 let center_y = egui::emath::lerp(rect.center().y..=main_lyrics_y(rect), clip_focus);
                 let leaving = outgoing.map_or(0.0, |o| o.3);
                 draw_lyrics_shade(&painter, rect, f, center_y, big * scale, video * ready.max(leaving));
+                // Typed lyrics on a white page, which gives way to a clicked video.
+                let page = typing_page(f) * ready.max(leaving) * (1.0 - clip_focus);
+                draw_typing_page(&painter, rect, f, page);
                 let draw = |ui: &mut egui::Ui| {
                     let transform = scaled_about(rect.center(), center_y, scale);
                     ui.with_visual_transform(transform, |ui| {
                         let y = rect.center().y;
                         if let Some((lyrics, at, line, alpha)) = outgoing {
-                            draw_outgoing(ui, rect, f, video, lyrics, at, line, y, big, alpha);
+                            draw_outgoing(ui, rect, f, video, lyrics, at, line, y, big, alpha, page);
                         }
                         if let (Some(lyrics), Some(scroll), true) = (synced, scroll, ready > 0.0) {
                             let mut painter = ui.painter().clone();
                             painter.multiply_opacity(ready);
-                            draw_timed_lyrics(&painter, rect, f, f.lyrics_position, video, lyrics, scroll, y, big);
+                            draw_timed_lyrics(&painter, rect, f, f.lyrics_position, video, lyrics, scroll, y, big, page);
                         }
                         // Nothing to sing: show what plays rather than an empty
                         // screen, once the last song's lyrics have given way.
@@ -1026,8 +1152,12 @@ impl VisualApp {
 
     fn handle_keys(&mut self, ctx: &egui::Context) {
         let escape = self.handle_shortcuts(ctx, Screen::Main);
-        // Esc closes the panel first, then the big lyrics; only then does it
-        // leave fullscreen.
+        // Esc closes the bar or the panel first, then the big lyrics; only
+        // then does it leave fullscreen.
+        if escape && self.mode_bar_on == Some(Screen::Main) {
+            self.mode_bar_on = None;
+            return;
+        }
         if escape && self.settings_open && self.settings_screen == Screen::Main {
             self.close_settings();
             return;
@@ -1042,7 +1172,9 @@ impl VisualApp {
             .title_bar
             .as_ref()
             .is_some_and(|bar| bar.under_pointer(ctx));
-        let on_buttons = self.transport.under_pointer(ctx);
+        let on_buttons = self.transport.under_pointer(ctx)
+            || self.over_screen_buttons(ctx)
+            || self.on_mode_bar(ctx, Screen::Main);
         let settings_here = self.settings_open && self.settings_screen == Screen::Main;
         self.handle_fullscreen(ctx, !settings_here && !on_bar && !on_buttons);
     }
@@ -1074,7 +1206,15 @@ impl VisualApp {
                     LyricsStyle::Drum => LyricsStyle::Lens,
                     LyricsStyle::Lens => LyricsStyle::Loupe,
                     LyricsStyle::Loupe => LyricsStyle::Live,
-                    LyricsStyle::Live => LyricsStyle::Words,
+                    LyricsStyle::Live => LyricsStyle::Typing,
+                    LyricsStyle::Typing => LyricsStyle::Flip,
+                    LyricsStyle::Flip => LyricsStyle::Block,
+                    LyricsStyle::Block => LyricsStyle::Neon,
+                    LyricsStyle::Neon => LyricsStyle::Crt,
+                    LyricsStyle::Crt => LyricsStyle::Giant,
+                    LyricsStyle::Giant => LyricsStyle::Disc,
+                    LyricsStyle::Disc => LyricsStyle::Player,
+                    LyricsStyle::Player => LyricsStyle::Words,
                 };
                 s.save();
                 s.lyrics
@@ -1085,13 +1225,21 @@ impl VisualApp {
                 LyricsStyle::Lens => "Texty pod čočkou",
                 LyricsStyle::Loupe => "Texty pod lupou",
                 LyricsStyle::Live => "Texty naživo",
+                LyricsStyle::Typing => "Texty psané",
+                LyricsStyle::Flip => "Texty se střídáním",
+                LyricsStyle::Block => "Texty v bloku",
+                LyricsStyle::Neon => "Neon za sklem",
+                LyricsStyle::Crt => "CRT",
+                LyricsStyle::Giant => "Obří slova",
+                LyricsStyle::Disc => "Blok s CD",
+                LyricsStyle::Player => "Klip s přehrávačem",
             });
         }
         if settings_key {
             self.toggle_panel(setup::Panel::Settings, screen);
         }
         if modes_key {
-            self.toggle_panel(setup::Panel::Modes, screen);
+            self.toggle_mode_bar(screen);
         }
         if mirror_key {
             self.toggle_mirror(ctx);
@@ -1240,7 +1388,10 @@ impl VisualApp {
             .title_bar
             .as_ref()
             .is_some_and(|bar| bar.under_pointer(ctx));
-        if self.settings_open || on_bar || self.transport.under_pointer(ctx) {
+        let on_buttons = self.transport.under_pointer(ctx)
+            || self.over_screen_buttons(ctx)
+            || self.on_mode_bar(ctx, Screen::Main);
+        if self.settings_open || on_bar || on_buttons {
             return;
         }
         let band = lyrics_band(rect, self.lyrics_focus_anim.progress());
@@ -1287,6 +1438,27 @@ impl VisualApp {
         self.settings_open = true;
         self.settings_screen = screen;
         self.panel = panel;
+    }
+
+    /// Ctrl+A: opens the bar of lyric styles in `screen`'s window, in place
+    /// of a panel there, or closes it.
+    fn toggle_mode_bar(&mut self, screen: Screen) {
+        if self.mode_bar_on == Some(screen) {
+            self.mode_bar_on = None;
+            return;
+        }
+        if self.settings_open && self.settings_screen == screen {
+            self.close_settings();
+        }
+        self.mode_bar_on = Some(screen);
+    }
+
+    /// Whether the pointer is on the bar of lyric styles in `screen`'s window.
+    fn on_mode_bar(&self, ctx: &egui::Context, screen: Screen) -> bool {
+        match screen {
+            Screen::Main => self.mode_bar.under_pointer(ctx),
+            Screen::Mirror => self.mirror_mode_bar.under_pointer(ctx),
+        }
     }
 
     fn close_settings(&mut self) {
@@ -1373,6 +1545,7 @@ impl VisualApp {
                 if frame.clip.is_some()
                     && !settings_here
                     && !self.mirror_transport.under_pointer(&ctx)
+                    && !self.on_mode_bar(&ctx, Screen::Mirror)
                     && self.settings.lock().unwrap().clip_screen != ClipScreen::Main
                 {
                     if ui.input(|i| i.pointer.hover_pos().is_some()) {
@@ -1388,11 +1561,14 @@ impl VisualApp {
                     ui.ctx()
                         .send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 }
-                // Esc closes the panel here first, then the second screen.
-                if escape && settings_here {
+                // Esc closes the bar or the panel here first, then the second screen.
+                let bar_here = self.mode_bar_on == Some(Screen::Mirror);
+                if escape && bar_here {
+                    self.mode_bar_on = None;
+                } else if escape && settings_here {
                     self.close_settings();
                 }
-                close = close_requested || (escape && !settings_here);
+                close = close_requested || (escape && !settings_here && !bar_here);
             },
         );
         self.mirror_frames = self.mirror_frames.saturating_add(1);
@@ -1553,7 +1729,7 @@ impl VisualApp {
             && let Some(lyrics) = e.lyrics.as_ref()
         {
             let line = lyrics.line_at(*at).map_or(-1.0, |i| i as f32);
-            draw_outgoing(ui, rect, f, video, lyrics, *at, line, center_y, size, *alpha);
+            draw_outgoing(ui, rect, f, video, lyrics, *at, line, center_y, size, *alpha, 0.0);
         }
         let lyrics = f
             .enrichment
@@ -1567,7 +1743,7 @@ impl VisualApp {
                 .map_or(-1.0, |i| i as f32);
             let mut painter = ui.painter().clone();
             painter.multiply_opacity(f.lyrics);
-            draw_timed_lyrics(&painter, rect, f, f.lyrics_position, video, lyrics, line, center_y, size);
+            draw_timed_lyrics(&painter, rect, f, f.lyrics_position, video, lyrics, line, center_y, size, 0.0);
         }
     }
 
@@ -1586,10 +1762,29 @@ impl VisualApp {
         let ctx = ui.ctx().clone();
         let rect = ui.max_rect();
         let accent = color(f.palette[0]);
+        let bar_open = self.mode_bar_on == Some(screen) && panel == 0.0;
         let buttons = self.mode == Mode::Window
             && !f.idle
             && panel == 0.0
+            && !bar_open
             && self.settings.lock().unwrap().buttons;
+        let style = self.settings.lock().unwrap().lyrics;
+        let bar = match screen {
+            Screen::Main => &mut self.mode_bar,
+            Screen::Mirror => &mut self.mirror_mode_bar,
+        };
+        match bar.show(&ctx, rect, style, bar_open) {
+            Some(Pick::Style(style)) => {
+                let mut s = self.settings.lock().unwrap();
+                s.lyrics = style;
+                s.save();
+            }
+            Some(Pick::More) => {
+                self.mode_bar_on = None;
+                self.toggle_panel(setup::Panel::Modes, screen);
+            }
+            None => {}
+        }
         let paused = f
             .now_playing
             .as_ref()
@@ -2088,6 +2283,22 @@ fn lyrics_band(rect: Rect, focus: f32) -> Rect {
     )
 }
 
+/// 1 when the lyrics are typed out on their page: the typing styles, with
+/// the player saying where in the song it is.
+fn typing_page(f: &FrameData) -> f32 {
+    let typed = matches!(f.lyrics_style, LyricsStyle::Typing | LyricsStyle::Flip | LyricsStyle::Block);
+    if typed && f.lyrics_position.is_some() { 1.0 } else { 0.0 }
+}
+
+/// The typed lyrics' page, `amount` of the way in: white, or with the
+/// flipping style black on every other word.
+fn draw_typing_page(painter: &egui::Painter, rect: Rect, f: &FrameData, amount: f32) {
+    let lyrics = f.enrichment.as_ref().and_then(|e| e.lyrics.as_ref());
+    let dark = f.lyrics_style == LyricsStyle::Flip
+        && lyrics.zip(f.lyrics_position).is_some_and(|(l, p)| typing::flipped(l, p));
+    typing::draw_page(painter, rect, amount, dark);
+}
+
 fn has_synced_lyrics(f: &FrameData) -> bool {
     !f.idle
         && f.enrichment
@@ -2137,6 +2348,9 @@ fn draw_lyrics_shade(
         (Some(_), LyricsStyle::Loupe) => size * LOUPE_SCALE * 2.8,
         (Some(_), LyricsStyle::Drum) => size * DRUM_SCALE * 3.2,
         (Some(_), LyricsStyle::Live) => live::reach(size),
+        (Some(_), LyricsStyle::Typing | LyricsStyle::Flip) => size * 2.6,
+        (Some(_), LyricsStyle::Block) => size * 1.6,
+        (Some(_), LyricsStyle::Neon | LyricsStyle::Crt | LyricsStyle::Giant | LyricsStyle::Disc | LyricsStyle::Player) => size * 1.6,
     };
     draw_band(painter, rect, center_y, reach, 175.0 * video);
 }
@@ -2155,6 +2369,7 @@ fn draw_timed_lyrics(
     scroll: f32,
     center_y: f32,
     size: f32,
+    page: f32,
 ) {
     let Some(position) = position else {
         draw_lyrics(painter, rect, lyrics, None, scroll, center_y, size);
@@ -2167,14 +2382,24 @@ fn draw_timed_lyrics(
         LyricsStyle::Lens => draw_lens(painter, rect, lyrics, position, center_y, size, vivid, video),
         LyricsStyle::Loupe => draw_loupe(painter, rect, lyrics, position, center_y, size, vivid, video),
         LyricsStyle::Live => {
-            // A mic hears the room even when nothing plays, like the pulse.
-            let playing = f.now_playing.as_ref().is_some_and(|np| np.state == PlaybackState::Playing);
-            let groove = match f.audio.as_ref().map(Capture::levels).filter(|l| playing && l.signal) {
-                Some(l) => live::Groove { beat: l.beat, bass: l.bass },
-                None => live::Groove { beat: f.pulse.min(1.0), bass: f.pulse.min(1.0) },
-            };
-            live::draw_live(painter, rect, lyrics, position, center_y, size, f.palette, video, groove)
+            live::draw_live(painter, rect, lyrics, position, center_y, size, f.palette, video, groove(f))
         }
+        LyricsStyle::Typing => typing::draw_typing(painter, rect, lyrics, position, center_y, size, page, video, false),
+        LyricsStyle::Flip => typing::draw_typing(painter, rect, lyrics, position, center_y, size, page, video, true),
+        // The whole-screen pictures need the screen; over the desktop they're a block.
+        LyricsStyle::Block | LyricsStyle::Neon | LyricsStyle::Crt | LyricsStyle::Giant | LyricsStyle::Disc | LyricsStyle::Player => {
+            typing::draw_block(painter, rect, lyrics, position, center_y, size, page, video)
+        }
+    }
+}
+
+/// What the music is doing: the beat and bass heard, or the pulse guessed
+/// without sound. A mic hears the room even when nothing plays, like the pulse.
+fn groove(f: &FrameData) -> live::Groove {
+    let playing = f.now_playing.as_ref().is_some_and(|np| np.state == PlaybackState::Playing);
+    match f.audio.as_ref().map(Capture::levels).filter(|l| playing && l.signal) {
+        Some(l) => live::Groove { beat: l.beat, bass: l.bass },
+        None => live::Groove { beat: f.pulse.min(1.0), bass: f.pulse.min(1.0) },
     }
 }
 
@@ -2192,12 +2417,13 @@ fn draw_outgoing(
     center_y: f32,
     size: f32,
     alpha: f32,
+    page: f32,
 ) {
     let lift = TSTransform::from_translation(Vec2::new(0.0, -size * 1.5 * (1.0 - alpha)));
     ui.with_visual_transform(lift, |ui| {
         let mut painter = ui.painter().clone();
         painter.multiply_opacity(alpha);
-        draw_timed_lyrics(&painter, rect, f, Some(at), video, lyrics, line, center_y, size);
+        draw_timed_lyrics(&painter, rect, f, Some(at), video, lyrics, line, center_y, size, page);
     });
 }
 
@@ -3293,7 +3519,8 @@ mod tests {
         let mut atlas = Atlas::default();
         let palettes = [[0.95, 0.45, 0.35], [0.2, 0.45, 0.95]];
         let shots = [10.05, 10.4, 11.2, 12.1, 13.0, 15.0, 25.5, 30.0, 33.2, 33.9];
-        let styles = [LyricsStyle::Words, LyricsStyle::Drum, LyricsStyle::Lens, LyricsStyle::Loupe, LyricsStyle::Live];
+        let styles = [LyricsStyle::Words, LyricsStyle::Drum, LyricsStyle::Lens, LyricsStyle::Loupe, LyricsStyle::Live, LyricsStyle::Typing, LyricsStyle::Flip, LyricsStyle::Block];
+        // The whole-screen styles are drawn by `draws_screens`.
         for (n, (style, at)) in styles
             .into_iter()
             .flat_map(|style| shots.map(|at| (style, at)))
@@ -3326,6 +3553,16 @@ mod tests {
                         let groove = live::Groove { beat: 0.6, bass: 0.5 };
                         live::draw_live(&painter, rect, &lyrics, position, center, size, palette, video, groove)
                     }
+                    LyricsStyle::Typing | LyricsStyle::Flip => {
+                        let flip = style == LyricsStyle::Flip;
+                        let dark = flip && typing::flipped(&lyrics, position);
+                        typing::draw_page(&painter, rect, 1.0 - video, dark);
+                        typing::draw_typing(&painter, rect, &lyrics, position, center, size, 1.0 - video, video, flip)
+                    }
+                    _ => {
+                        typing::draw_page(&painter, rect, 1.0 - video, false);
+                        typing::draw_block(&painter, rect, &lyrics, position, center, size, 1.0 - video, video)
+                    }
                 }
             };
             // The first run loads the fonts.
@@ -3347,8 +3584,144 @@ mod tests {
                 LyricsStyle::Lens => "lens",
                 LyricsStyle::Loupe => "loupe",
                 LyricsStyle::Live => "live",
+                LyricsStyle::Typing => "typing",
+                LyricsStyle::Flip => "flip",
+                _ => "block",
             };
             image.save(dir.join(format!("{kind}{}.png", n % shots.len()))).unwrap();
+        }
+    }
+
+    /// Ctrl+A's bar of styles over a dark picture, rasterized like [`draws_words`]:
+    /// `MV_TEST_WORDS=dir cargo test -p musicvisual draws_mode_bar -- --ignored`.
+    #[test]
+    #[ignore]
+    fn draws_mode_bar() {
+        let dir = std::path::PathBuf::from(std::env::var_os("MV_TEST_WORDS").expect("MV_TEST_WORDS"));
+        let ctx = egui::Context::default();
+        install_fonts(&ctx);
+        let size = Vec2::new(1280.0, 720.0);
+        let input = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
+            ..Default::default()
+        };
+        let mut atlas = Atlas::default();
+        let mut bar = ModeBar::default();
+        let mut out = None;
+        for _ in 0..40 {
+            let frame = ctx.run_ui(input(), |ui| {
+                let rect = Rect::from_min_size(Pos2::ZERO, size);
+                ui.painter().rect_filled(rect, 0.0, Color32::from_rgb(40, 34, 52));
+                bar.show(ui.ctx(), rect, LyricsStyle::Neon, true);
+            });
+            for (id, delta) in &frame.textures_delta.set {
+                atlas.apply(*id, delta);
+            }
+            out = Some(frame);
+        }
+        let out = out.unwrap();
+        let primitives = ctx.tessellate(out.shapes, out.pixels_per_point);
+        let mut image = image::RgbaImage::new(size.x as u32, size.y as u32);
+        for p in primitives {
+            if let egui::epaint::Primitive::Mesh(mesh) = p.primitive {
+                rasterize(&mut image, &mesh, &atlas);
+            }
+        }
+        image.save(dir.join("modebar.png")).unwrap();
+    }
+
+    /// The whole-screen styles, rasterized like [`draws_words`]:
+    /// `MV_TEST_WORDS=dir cargo test -p musicvisual draws_screens -- --ignored`.
+    #[test]
+    #[ignore]
+    fn draws_screens() {
+        let dir = std::path::PathBuf::from(std::env::var_os("MV_TEST_WORDS").expect("MV_TEST_WORDS"));
+        let line = |at: f64, text: &str| LyricLine {
+            at: Duration::from_secs_f64(at),
+            text: text.to_owned(),
+            words: Vec::new(),
+            end: None,
+        };
+        let lyrics = Lyrics {
+            synced: vec![
+                line(6.0, "Ten drink nějakej hořkej co to"),
+                line(10.0, "Man cause love hurt"),
+                line(14.0, "Zabíráš mi místo v cloudu"),
+                line(18.0, ""),
+            ],
+            plain: None,
+            estimated: false,
+        };
+        let np = NowPlaying {
+            track: mv_core::Track {
+                title: "Až na měsíc".into(),
+                artist: Some("Viktor Sheen, Nik Tendo, Calin".into()),
+                album: None,
+                art_url: None,
+            },
+            state: PlaybackState::Playing,
+            duration: Some(Duration::from_secs(320)),
+            position: None,
+            position_at: SystemTime::now(),
+            device: None,
+            volume: None,
+            muted: false,
+            shuffle: Some(true),
+            repeat: Some(mv_core::Repeat::One),
+        };
+        let ctx = egui::Context::default();
+        install_fonts(&ctx);
+        let size = Vec2::new(960.0, 540.0);
+        let input = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
+            ..Default::default()
+        };
+        let mut atlas = Atlas::default();
+        let styles = ["neon", "crt", "giant", "disc", "player"];
+        for (n, (style, at)) in styles
+            .into_iter()
+            .flat_map(|style| [7.5, 9.5, 11.5, 15.0].map(|at| (style, at)))
+            .enumerate()
+        {
+            let draw = |ctx: &egui::Context| {
+                let painter = ctx.layer_painter(egui::LayerId::background());
+                let rect = Rect::from_min_size(Pos2::ZERO, size);
+                painter.rect_filled(rect, 0.0, Color32::from_rgb(40, 50, 70));
+                let scene = screen::Scene {
+                    rect,
+                    lyrics: &lyrics,
+                    position: Duration::from_secs_f64(at),
+                    song_position: Some(Duration::from_secs_f64(at + 120.0)),
+                    np: &np,
+                    time: at as f32,
+                    palette: [[0.95, 0.3, 0.2], [0.3, 0.3, 0.5], [0.1, 0.1, 0.1]],
+                    beat: 0.5,
+                    cover: None,
+                    clip: None,
+                };
+                match style {
+                    "neon" => screen::draw_neon(&painter, &scene),
+                    "crt" => screen::draw_crt(&painter, &scene),
+                    "giant" => screen::draw_giant(&painter, &scene),
+                    "disc" => screen::draw_disc(&painter, &scene, big_lyrics_size(rect)),
+                    _ => {
+                        screen::draw_player(&painter, &scene, None);
+                    }
+                }
+            };
+            let warm_up = ctx.run_ui(input(), |ui| draw(ui.ctx()));
+            let out = ctx.run_ui(input(), |ui| draw(ui.ctx()));
+            for (id, delta) in warm_up.textures_delta.set.iter().chain(&out.textures_delta.set) {
+                atlas.apply(*id, delta);
+            }
+            let primitives = ctx.tessellate(out.shapes, out.pixels_per_point);
+            let mut image = image::RgbaImage::new(size.x as u32, size.y as u32);
+            for p in primitives {
+                if let egui::epaint::Primitive::Mesh(mesh) = p.primitive {
+                    rasterize(&mut image, &mesh, &atlas);
+                }
+            }
+            image.save(dir.join(format!("{style}{}.png", n % 4))).unwrap();
         }
     }
 
@@ -3442,6 +3815,8 @@ mod tests {
             device: None,
             volume: None,
             muted: false,
+            shuffle: None,
+            repeat: None,
         };
         let devices = [
             Device {

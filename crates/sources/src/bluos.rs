@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use std::time::{Duration, SystemTime};
 
 use mdns_sd::{ServiceDaemon, ServiceEvent};
-use mv_core::{NowPlaying, PlaybackState, SourceEvent, SourceId, Track};
+use mv_core::{NowPlaying, PlaybackState, Repeat, SourceEvent, SourceId, Track};
 
 use crate::EventSender;
 
@@ -180,6 +180,21 @@ pub fn skip(host: &str, forward: bool) -> Result<(), String> {
     command(host, if forward { "/Skip" } else { "/Back" })
 }
 
+/// Turns shuffle on or off.
+pub fn set_shuffle(host: &str, on: bool) -> Result<(), String> {
+    command(host, if on { "/Shuffle?state=1" } else { "/Shuffle?state=0" })
+}
+
+/// Sets what the player repeats.
+pub fn set_repeat(host: &str, repeat: Repeat) -> Result<(), String> {
+    let state = match repeat {
+        Repeat::All => 0,
+        Repeat::One => 1,
+        Repeat::Off => 2,
+    };
+    command(host, &format!("/Repeat?state={state}"))
+}
+
 /// Pauses a playing player, resumes a paused one.
 pub fn toggle_pause(host: &str) -> Result<(), String> {
     command(host, "/Pause?toggle=1")
@@ -301,6 +316,13 @@ fn parse_status(
                 .and_then(|v| v.parse::<f32>().ok())
                 .filter(|v| *v >= 0.0)
                 .map(|v| (v / 100.0).min(1.0)),
+            shuffle: field("shuffle").map(|s| s == "1"),
+            // 0 repeats the queue, 1 the song, 2 nothing.
+            repeat: field("repeat").map(|r| match r.as_str() {
+                "0" => Repeat::All,
+                "1" => Repeat::One,
+                _ => Repeat::Off,
+            }),
             muted: field("mute").as_deref() == Some("1"),
         }),
     })
