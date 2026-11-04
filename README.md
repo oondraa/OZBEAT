@@ -58,7 +58,8 @@ Run `OZBEAT.exe` once before you use the screensaver, so your settings are ready
 | `F11` or double-click | Fullscreen on / off |
 | `Ctrl+D` | Use a second screen: cover big here, lyrics there over the music video (click it to swap which is big) |
 | `Ctrl+S` | Settings |
-| `Ctrl+A` | Modes: what to see, such as how the lyrics look |
+| `Tab` | The lyric styles, as a grid of live previews ("Další módy" there for music videos and the like) |
+| `←` / `→` | Previous / next lyric style |
 | `Ctrl+↑` / `Ctrl+↓` | Louder / quieter (BluOS speaker, or Windows volume for apps on this PC) |
 | `Ctrl+Space` | Pause / play |
 | `Ctrl+←` / `Ctrl+→` | Previous / next song |
@@ -144,6 +145,6 @@ Spořič zabere všechny monitory: na hlavním je obal a název, na druhém text
 
 **Aktualizace:** když vyjde nová verze, otevři nastavení (`Ctrl+S`) a klikni na **Aktualizovat a restartovat**. Funguje to od verze 0.1.3, starší verzi stáhni znovu.
 
-**Klávesy:** `F11` nebo dvojklik přepíná celou obrazovku. `Ctrl+D` zapne druhý monitor. `Ctrl+S` otevře nastavení, `Ctrl+A` módy (co chceš vidět, třeba styl textů). `Ctrl+↑`/`Ctrl+↓` zesílí/ztlumí (reproduktor BluOS, u aplikací v PC hlasitost Windows). `Ctrl+mezerník` pozastaví/pustí. `Ctrl+←`/`Ctrl+→` přeskočí na předchozí/další písničku. `Ctrl+Alt+T` odkudkoliv přepne na samotné texty přes plochu a zpátky. `Ctrl+K` udělá sdílecí kartu s právě zpívaným řádkem (9:16, do Obrázky\OZBEAT a do schránky). `Esc` celou obrazovku nebo nastavení zavře.
+**Klávesy:** `F11` nebo dvojklik přepíná celou obrazovku. `Ctrl+D` zapne druhý monitor. `Ctrl+S` otevře nastavení, `Tab` mřížku stylů textů s živými náhledy, `←`/`→` přepne na předchozí/další styl. `Ctrl+↑`/`Ctrl+↓` zesílí/ztlumí (reproduktor BluOS, u aplikací v PC hlasitost Windows). `Ctrl+mezerník` pozastaví/pustí. `Ctrl+←`/`Ctrl+→` přeskočí na předchozí/další písničku. `Ctrl+Alt+T` odkudkoliv přepne na samotné texty přes plochu a zpátky. `Ctrl+K` udělá sdílecí kartu s právě zpívaným řádkem (9:16, do Obrázky\OZBEAT a do schránky). `Esc` celou obrazovku nebo nastavení zavře.
 
 **Licence:** zdarma jen pro osobní, nekomerční použití. Komerční použití, další šíření a převzetí kódu nejsou povolené. Podrobnosti najdeš v [LICENSE](LICENSE).

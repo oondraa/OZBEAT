@@ -13,9 +13,14 @@ use eframe::egui::{
 };
 use mv_core::{NowPlaying, PlaybackState, Repeat};
 
+use super::live;
 use super::typing::{self, Word};
 
+mod dance;
+mod pocket;
 mod textures;
+pub(super) use dance::draw_dance;
+pub(super) use pocket::draw_pocket;
 use super::{BOLD, ClipFrame, HEAVY, REGULAR, draw_clip, fisheye, warped_mesh};
 
 /// What a full-screen style draws from.
@@ -33,6 +38,8 @@ pub(super) struct Scene<'a> {
     pub beat: f32,
     pub cover: Option<TextureId>,
     pub clip: Option<ClipFrame>,
+    /// The song's tempo, when known.
+    pub bpm: Option<f32>,
 }
 
 /// A button of the player.
@@ -319,6 +326,111 @@ pub(super) fn draw_crt(painter: &Painter, s: &Scene) {
                 warped_mesh(&mut ghost, &galley, atlas, |v| bulge(at + v + split), Color32::from_rgba_unmultiplied(255, 40, 40, 70), 4);
                 warped_mesh(&mut ghost, &galley, atlas, |v| bulge(at + v - split), Color32::from_rgba_unmultiplied(40, 90, 255, 45), 4);
             }
+        }
+        painter.add(ghost);
+        painter.add(mesh);
+    }
+
+    // Scanlines, and a brighter band rolling down.
+    let pitch = 4.0 * scale;
+    let mut lines = Mesh::default();
+    let mut y = rect.top();
+    while y < rect.bottom() {
+        lines.add_colored_rect(
+            Rect::from_min_size(Pos2::new(rect.left(), y), Vec2::new(rect.width(), pitch * 0.45)),
+            Color32::from_black_alpha(110),
+        );
+        y += pitch;
+    }
+    painter.add(lines);
+    let roll = rect.top() + (s.time * 0.12).fract() * rect.height() * 1.4 - rect.height() * 0.2;
+    let band = Rect::from_center_size(Pos2::new(center.x, roll), Vec2::new(rect.width(), rect.height() * 0.12));
+    painter.rect_filled(band, 0.0, Color32::from_white_alpha(6));
+    // The tube breathes with the beat.
+    painter.rect_filled(rect, 0.0, Color32::from_black_alpha((26.0 * (1.0 - s.beat)) as u8));
+    vignette(painter, rect, 230.0);
+}
+
+/// The CRT kept black, its words lit in the colors the live lyrics give
+/// them ("fire" burning, "money" in gold, names in their house colors) and
+/// the rest in pale phosphor, each flaring white for a moment as it is sung
+/// and glowing into the tube around it.
+pub(super) fn draw_crt_color(painter: &Painter, s: &Scene) {
+    let rect = s.rect;
+    let scale = (rect.height() / 1080.0).max(0.5);
+    painter.rect_filled(rect, 0.0, Color32::from_rgb(6, 6, 8));
+    let center = rect.center();
+    let phosphor = Color32::from_rgb(232, 230, 222);
+    let clock = s.position.as_secs_f32();
+
+    if let Some((words, rows, current, _)) = current_block(s.lyrics, s.position, 9, 4) {
+        let czech = live::sung_in_czech(s.lyrics);
+        let side = (rect.width() * 0.62).min(rect.height() * 0.85);
+        let base = snap(side * 0.2, 4.0);
+        let leading = 0.92;
+        let height = base * leading * rows.len() as f32;
+        let bulge = fisheye(center, Vec2::new(side * 0.75, height * 0.8), 0.9);
+        let atlas = Vec2::from(painter.fonts(|f| f.font_image_size()).map(|v| v as f32));
+        let font = |px: f32| FontId::new(px, FontFamily::Name(HEAVY.into()));
+        const STEPS: u32 = 4;
+        let per_glyph = ((STEPS + 1) * (STEPS + 1)) as usize;
+        let mut mesh = Mesh::default();
+        let mut ghost = Mesh::default();
+        let mut glows = Vec::new();
+        let mut top = center.y - height / 2.0;
+        for row in rows {
+            let texts: Vec<String> = words[row.clone()].iter().map(|w| w.text.trim().to_uppercase()).collect();
+            let layout = |px: f32| -> Vec<_> {
+                texts.iter().map(|t| painter.layout_no_wrap(t.clone(), font(px), Color32::WHITE)).collect()
+            };
+            let width = |galleys: &[std::sync::Arc<eframe::egui::Galley>], px: f32| {
+                galleys.iter().map(|g| g.size().x).sum::<f32>() + px * 0.28 * (galleys.len() as f32 - 1.0)
+            };
+            let mut px = base;
+            let mut galleys = layout(px);
+            // Laid out whole for its width, so the row stays put as words come.
+            if width(&galleys, px) > side {
+                px = snap(px * side / width(&galleys, px), 2.0);
+                galleys = layout(px);
+            }
+            let mut x = center.x - width(&galleys, px) / 2.0;
+            let y = top + (base * leading - galleys.first().map_or(px, |g| g.size().y)) / 2.0;
+            top += base * leading;
+            for (galley, k) in galleys.into_iter().zip(row) {
+                let at = Pos2::new(x, y);
+                x += galley.size().x + px * 0.28;
+                if k > current {
+                    continue;
+                }
+                let tint = live::Tint::of(&words[k].text, czech);
+                let since = s.position.saturating_sub(words[k].at).as_secs_f32();
+                // The phosphor flares as the word hits, then settles.
+                let flare = (1.0 - since / 0.18).clamp(0.0, 1.0);
+                let mut word = Mesh::default();
+                warped_mesh(&mut word, &galley, atlas, |v| bulge(at + v), phosphor, STEPS);
+                let n = word.vertices.len() / per_glyph;
+                for (j, glyph) in word.vertices.chunks_mut(per_glyph).enumerate() {
+                    let color = tint.map_or(phosphor, |t| t.color(phosphor, j, n, clock));
+                    let color = super::lerp_color(color, Color32::WHITE, flare * 0.7);
+                    for v in glyph {
+                        v.color = color;
+                    }
+                }
+                if let Some(t) = tint {
+                    let size = galley.size();
+                    let glow_at = bulge(at + size / 2.0);
+                    let c = t.color(phosphor, n / 2, n, clock);
+                    glows.push((glow_at, size * Vec2::new(0.75, 1.1) + Vec2::splat(px * 0.3), c));
+                }
+                let split = Vec2::new(3.0 * scale * (0.5 + s.beat), 0.0);
+                warped_mesh(&mut ghost, &galley, atlas, |v| bulge(at + v + split), Color32::from_rgba_unmultiplied(255, 40, 40, 60), STEPS);
+                warped_mesh(&mut ghost, &galley, atlas, |v| bulge(at + v - split), Color32::from_rgba_unmultiplied(40, 90, 255, 45), STEPS);
+                mesh.append(word);
+            }
+        }
+        let swell = 0.8 + 0.4 * s.beat;
+        for (at, reach, color) in glows {
+            glow(painter, at, reach, color.gamma_multiply(0.22 * swell));
         }
         painter.add(ghost);
         painter.add(mesh);

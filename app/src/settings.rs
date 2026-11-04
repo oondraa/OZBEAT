@@ -46,6 +46,12 @@ pub enum LyricsStyle {
     Neon,
     /// Heavy capitals on a red CRT, bulging under the glass, scanlines over.
     Crt,
+    /// The CRT kept black, its words in the colors the live lyrics give them.
+    CrtColor,
+    /// A black silhouette dancing on neon, the words huge across it.
+    Dance,
+    /// The line on the backlit screen of a little pocket player.
+    Pocket,
     /// One huge word at a time on light gray.
     Giant,
     /// The block beside a CD case, the cover spinning on the disc.

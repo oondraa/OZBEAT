@@ -40,6 +40,10 @@ const SERIF: &str = "live-serif";
 const GOTHIC: &str = "live-gothic";
 const BLACK: &str = "live-black";
 const MONO: &str = "live-mono";
+/// Tall narrow capitals, for the dancing silhouettes.
+pub(crate) const CONDENSED: &str = "live-condensed";
+/// A plain sans, for the pocket player's screen.
+pub(crate) const SANS: &str = "live-sans";
 /// Font family of the symbols behind words.
 pub(super) const SYMBOLS: &str = "live-symbols";
 
@@ -54,6 +58,8 @@ pub(crate) const FACES: &[(&str, &[&str])] = &[
     (GOTHIC, &["C:\\Windows\\Fonts\\OLDENGL.TTF", "C:\\Windows\\Fonts\\BOD_B.TTF", "C:\\Windows\\Fonts\\georgiab.ttf"]),
     (BLACK, &["C:\\Windows\\Fonts\\ariblk.ttf", "C:\\Windows\\Fonts\\impact.ttf"]),
     (MONO, &["C:\\Windows\\Fonts\\consolab.ttf", "C:\\Windows\\Fonts\\courbd.ttf"]),
+    (CONDENSED, &["C:\\Windows\\Fonts\\impact.ttf", "C:\\Windows\\Fonts\\ARIALNB.TTF", "/usr/share/fonts/truetype/msttcorefonts/Impact.ttf"]),
+    (SANS, &["C:\\Windows\\Fonts\\arial.ttf", "/System/Library/Fonts/Helvetica.ttc", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]),
     (SYMBOLS, &[
         "C:\\Windows\\Fonts\\seguisym.ttf",
         "/System/Library/Fonts/Apple Symbols.ttf",
