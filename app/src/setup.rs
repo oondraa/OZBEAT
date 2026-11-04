@@ -12,6 +12,7 @@ use mv_audio::{Capture, Input};
 use mv_core::{Device, PlaybackState};
 
 use crate::anim::{ease_in_cubic, ease_out_cubic, glow, remap, spring};
+use crate::glass;
 use crate::icons;
 use crate::settings::{AudioMode, ClipScreen, Settings, SharedSettings};
 use crate::update::{self, SharedUpdate, Status};
@@ -24,6 +25,8 @@ const WIDTH: f32 = 920.0;
 const GAP: f32 = 14.0;
 /// Corner radius of the glass panel.
 const RADIUS: f32 = 28.0;
+/// Between the glass's edge and what's on it.
+const MARGIN: f32 = 24.0;
 /// Corner radius of the section cards inside it.
 const CARD_RADIUS: u8 = 18;
 /// Dark text on light controls.
@@ -98,16 +101,8 @@ pub fn show(
         }
     };
 
-    let frame = egui::Frame::new()
-        .fill(Color32::from_rgba_unmultiplied(16, 16, 22, 200).gamma_multiply(opacity))
-        .shadow(egui::Shadow {
-            offset: [0, 24],
-            blur: 80,
-            spread: 0,
-            color: Color32::from_black_alpha(140).gamma_multiply(opacity),
-        })
-        .corner_radius(RADIUS)
-        .inner_margin(24.0);
+    // No fill: the glass goes under the contents once their size is known.
+    let frame = egui::Frame::new().corner_radius(RADIUS).inner_margin(MARGIN);
     let window = egui::Window::new("ozbeat-setup")
         .title_bar(false)
         .resizable(false)
@@ -116,6 +111,9 @@ pub fn show(
         .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
         .frame(frame)
         .show(ctx, |ui| {
+            let mut under = ui.painter().with_clip_rect(ctx.content_rect());
+            under.multiply_opacity(opacity);
+            let slots = [under.add(egui::Shape::Noop), under.add(egui::Shape::Noop)];
             ui.multiply_opacity(opacity);
             ui.set_width(WIDTH);
             block(ui, reveal(0), |ui| header(ui, panel, first_run, &mut done));
@@ -166,6 +164,11 @@ pub fn show(
 
             ui.add_space(14.0);
             block(ui, reveal(8), footer);
+
+            let pane = ui.min_rect().expand(MARGIN);
+            for (slot, shape) in slots.into_iter().zip(glass::shapes(&under, pane, RADIUS, glass::Look::PANEL)) {
+                under.set(slot, shape);
+            }
         });
     if let Some(window) = window {
         let rect = window.response.rect;
@@ -204,12 +207,12 @@ fn draw_rim(painter: &egui::Painter, rect: Rect, opacity: f32, shine: f32) {
     painter.rect_stroke(
         rect,
         RADIUS,
-        Stroke::new(1.0, glow(Color32::WHITE, (0.12 + 0.5 * shine) * opacity)),
+        Stroke::new(1.0, glow(Color32::WHITE, 0.5 * shine * opacity)),
         StrokeKind::Inside,
     );
     // The light catching the top edge, fading out toward the corners so it
     // doesn't end abruptly where the rim starts to curve.
-    let edge = glow(Color32::WHITE, (0.35 + 0.5 * shine) * opacity);
+    let edge = glow(Color32::WHITE, 0.6 * shine * opacity);
     let top = rect.top() + 0.5;
     let mid = rect.center().x;
     let half = (rect.width() / 2.0 - RADIUS).max(0.0);
@@ -336,19 +339,25 @@ fn switch(ui: &mut egui::Ui, on: &mut bool, label: &str, detail: Option<&str>) -
             }
         });
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let size = Vec2::new(44.0, 26.0);
+            // A track with a capsule in it, as on glass: while it moves the
+            // capsule lifts off into a lens and settles back on the other side.
+            let size = Vec2::new(50.0, 28.0);
             let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
             let t = ui.ctx().animate_bool_responsive(ui.id().with(label), *on);
-            let track = Color32::from_white_alpha(40).lerp_to_gamma(BRAND_BLUE, t);
-            ui.painter().rect_filled(rect, 13.0, track);
-            let knob = egui::emath::lerp(rect.left() + 13.0..=rect.right() - 13.0, t);
-            let center = egui::pos2(knob, rect.center().y);
-            ui.painter().circle_filled(
-                center + Vec2::new(0.0, 1.0),
-                11.0,
-                Color32::from_black_alpha(50),
-            );
-            ui.painter().circle_filled(center, 11.0, Color32::WHITE);
+            let painter = ui.painter();
+            let track = Color32::from_white_alpha(34).lerp_to_gamma(BRAND_BLUE, t);
+            painter.rect_filled(rect, size.y / 2.0, track);
+            let knob = Vec2::new(30.0, 22.0);
+            let x = egui::emath::lerp(rect.left() + 3.0 + knob.x / 2.0..=rect.right() - 3.0 - knob.x / 2.0, t);
+            let lift = (t * (1.0 - t) * 4.0).clamp(0.0, 1.0);
+            let capsule = Rect::from_center_size(egui::pos2(x, rect.center().y), knob * (1.0 + 0.45 * lift));
+            if lift > 0.02 {
+                glass::pane(painter, capsule, capsule.height() / 2.0, glass::Look::BEAD);
+                painter.rect_filled(capsule, capsule.height() / 2.0, Color32::from_white_alpha((235.0 * (1.0 - lift)) as u8));
+            } else {
+                painter.rect_filled(capsule.translate(Vec2::new(0.0, 1.0)), knob.y / 2.0, Color32::from_black_alpha(45));
+                painter.rect_filled(capsule, knob.y / 2.0, Color32::WHITE);
+            }
         });
     });
     let response = ui.interact(
@@ -366,35 +375,42 @@ fn switch(ui: &mut egui::Ui, on: &mut bool, label: &str, detail: Option<&str>) -
     false
 }
 
-/// A row of choices where one is picked: the picked one is a light pill.
+/// A row of choices where one is picked: the picked one is a light pill
+/// that glides over to the next one picked.
 fn segmented<T: PartialEq + Copy>(ui: &mut egui::Ui, value: &mut T, choices: &[(T, &str)]) {
     ui.spacing_mut().button_padding = Vec2::new(12.0, 4.0);
     egui::Frame::new()
         .fill(Color32::from_white_alpha(12))
-        .corner_radius(12)
+        .corner_radius(16)
         .inner_margin(3.0)
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing.x = 3.0;
+            let thumb = ui.painter().add(egui::Shape::Noop);
+            let mut rects = Vec::new();
             ui.horizontal(|ui| {
                 for &(choice, label) in choices {
                     let picked = *value == choice;
-                    let text =
-                        RichText::new(label).color(if picked { INK } else { Color32::WHITE });
-                    let fill = if picked {
-                        Color32::from_white_alpha(235)
-                    } else {
-                        Color32::TRANSPARENT
-                    };
+                    let text = RichText::new(label).color(if picked { INK } else { Color32::WHITE });
                     let button = egui::Button::new(if picked { text.strong() } else { text })
-                        .fill(fill)
+                        .fill(Color32::TRANSPARENT)
                         .stroke(Stroke::NONE)
-                        .corner_radius(9.0)
+                        .corner_radius(13.0)
                         .min_size(Vec2::new(0.0, 32.0));
-                    if ui.add(button).clicked() {
+                    let response = ui.add(button);
+                    rects.push(response.rect);
+                    if response.clicked() {
                         *value = choice;
                     }
                 }
             });
+            if let Some(at) = choices.iter().position(|(c, _)| c == value) {
+                let id = ui.id().with("segmented-thumb");
+                let ctx = ui.ctx();
+                let left = ctx.animate_value_with_time(id.with(0), rects[at].left(), 0.22);
+                let right = ctx.animate_value_with_time(id.with(1), rects[at].right(), 0.22);
+                let rect = Rect::from_x_y_ranges(left..=right, rects[at].y_range());
+                ui.painter().set(thumb, egui::epaint::RectShape::filled(rect, 13.0, Color32::from_white_alpha(235)));
+            }
         });
 }
 

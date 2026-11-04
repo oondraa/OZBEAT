@@ -1,6 +1,7 @@
-//! Tab: the lyric styles as a grid of live previews over the dimmed window,
-//! the ones moving with the song apart from those taking the whole screen.
-//! The previews are drawn by the app into the tiles this lays out; a click or
+//! Tab: the lyric styles as a grid of pictures on frosted glass over the
+//! window, the ones moving with the song apart from those taking the whole
+//! screen. The pictures are stills made beforehand (`draws_previews` in
+//! `ui.rs`), so the grid costs nothing to draw; a click or
 //! Enter picks one and closes the grid, the arrows move between them, and a
 //! click beside them (or Tab, or Esc) closes it as it was. "Další módy" opens
 //! the rest of the modes (music videos, lyrics over the desktop).
@@ -8,6 +9,7 @@
 use eframe::egui::{self, Align2, Color32, CursorIcon, FontFamily, FontId, Key, Pos2, Rect, Stroke, Vec2};
 
 use crate::anim::ease_out_cubic;
+use crate::glass;
 use crate::icons;
 use crate::settings::LyricsStyle;
 use crate::ui::BOLD;
@@ -46,6 +48,11 @@ pub fn neighbor(style: LyricsStyle, step: i32) -> LyricsStyle {
     STYLES[(at + step).rem_euclid(n) as usize].0
 }
 
+/// The still picture of `style` on the grid, in `assets/previews`.
+pub fn preview_file(style: LyricsStyle) -> String {
+    format!("{}.jpg", format!("{style:?}").to_lowercase())
+}
+
 /// What was picked on the grid.
 pub enum Pick {
     Style(LyricsStyle),
@@ -55,12 +62,6 @@ pub enum Pick {
     Close,
 }
 
-/// A tile laid out for the app to draw a style's preview into.
-pub struct Tile {
-    pub rect: Rect,
-    pub style: LyricsStyle,
-}
-
 pub struct ModeBar {
     /// How far it is in (0 -> 1).
     shown: f32,
@@ -68,12 +69,48 @@ pub struct ModeBar {
     selected: Option<usize>,
     /// Where the pointer was last frame, so the arrows win until it moves.
     last_hover: Option<Pos2>,
+    /// The stills, in [`STYLES`] order; loaded the first time it opens.
+    previews: Vec<egui::TextureHandle>,
 }
 
 impl Default for ModeBar {
     fn default() -> Self {
-        Self { shown: 0.0, selected: None, last_hover: None }
+        Self { shown: 0.0, selected: None, last_hover: None, previews: Vec::new() }
     }
+}
+
+/// The still of `style`, as made by `draws_previews`.
+fn preview_bytes(style: LyricsStyle) -> &'static [u8] {
+    macro_rules! still {
+        ($name:literal) => {
+            include_bytes!(concat!("../assets/previews/", $name, ".jpg"))
+        };
+    }
+    match style {
+        LyricsStyle::Words => still!("words"),
+        LyricsStyle::Drum => still!("drum"),
+        LyricsStyle::Lens => still!("lens"),
+        LyricsStyle::Loupe => still!("loupe"),
+        LyricsStyle::Live => still!("live"),
+        LyricsStyle::Typing => still!("typing"),
+        LyricsStyle::Flip => still!("flip"),
+        LyricsStyle::Block => still!("block"),
+        LyricsStyle::Neon => still!("neon"),
+        LyricsStyle::Crt => still!("crt"),
+        LyricsStyle::CrtColor => still!("crtcolor"),
+        LyricsStyle::Dance => still!("dance"),
+        LyricsStyle::Pocket => still!("pocket"),
+        LyricsStyle::Giant => still!("giant"),
+        LyricsStyle::Disc => still!("disc"),
+        LyricsStyle::Player => still!("player"),
+    }
+}
+
+fn load_preview(ctx: &egui::Context, style: LyricsStyle) -> egui::TextureHandle {
+    let image = image::load_from_memory(preview_bytes(style)).map(|i| i.to_rgba8()).unwrap_or_default();
+    let size = [image.width() as usize, image.height() as usize];
+    let pixels = egui::ColorImage::from_rgba_unmultiplied(size, image.as_raw());
+    ctx.load_texture(format!("ozbeat-style-{}", preview_file(style)), pixels, egui::TextureOptions::LINEAR)
 }
 
 /// Where the tiles go in `screen`: the title row's rect, each group's
@@ -139,9 +176,8 @@ impl ModeBar {
     }
 
     /// Draws the grid over `screen` while `open`, fading in and out, with
-    /// `current` marked. Returns what was picked, the tiles to draw the
-    /// previews into and how visible they are.
-    pub fn show(&mut self, ctx: &egui::Context, screen: Rect, current: LyricsStyle, open: bool) -> (Option<Pick>, Vec<Tile>, f32) {
+    /// `current` marked. Returns what was picked.
+    pub fn show(&mut self, ctx: &egui::Context, screen: Rect, current: LyricsStyle, open: bool) -> Option<Pick> {
         let (hover, click, dt) = ctx.input(|i| {
             let click = i.pointer.primary_clicked().then(|| i.pointer.interact_pos());
             (i.pointer.hover_pos(), click.flatten(), i.stable_dt.min(0.1))
@@ -150,7 +186,10 @@ impl ModeBar {
         self.shown = if open { (self.shown + step).min(1.0) } else { (self.shown - step).max(0.0) };
         if self.shown == 0.0 {
             self.selected = None;
-            return (None, Vec::new(), 0.0);
+            return None;
+        }
+        if self.previews.is_empty() {
+            self.previews = STYLES.iter().map(|(style, _, _)| load_preview(ctx, *style)).collect();
         }
         if self.shown < 1.0 {
             ctx.request_repaint();
@@ -203,7 +242,8 @@ impl ModeBar {
 
         let mut painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("ozbeat-modebar")));
         painter.multiply_opacity(shown);
-        painter.rect_filled(screen, 0.0, Color32::from_black_alpha(215));
+        // Frosted glass over the whole window, dark enough for the stills to stand out.
+        glass::pane(&painter, screen, 0.0, glass::Look::PANEL.tint(Color32::from_rgba_premultiplied(6, 6, 10, 200)));
         let ink = Color32::from_rgb(246, 243, 238);
         let dim = Color32::from_white_alpha(120);
 
@@ -222,7 +262,7 @@ impl ModeBar {
             Vec2::new(more_galley.size().x + 24.0 * s, 30.0 * s),
         );
         let over_more = interactive && hover.is_some_and(|p| more.contains(p));
-        painter.rect_filled(more, more.height() / 2.0, Color32::from_white_alpha(if over_more { 34 } else { 18 }));
+        glass::pane(&painter, more, more.height() / 2.0, glass::Look::PILL.tint(Color32::from_white_alpha(if over_more { 40 } else { 14 })));
         painter.galley(more.center() - more_galley.size() / 2.0, more_galley, ink);
         painter.text(
             Pos2::new(more.left() - 18.0 * s, l.title.center().y),
@@ -235,7 +275,6 @@ impl ModeBar {
             painter.text(*heading, Align2::LEFT_CENTER, text, FontId::new((12.5 * s).round(), FontFamily::Name(BOLD.into())), dim);
         }
 
-        let mut tiles = Vec::new();
         let mut on_tile = false;
         for (k, (&rect, &(style, icon, name))) in l.tiles.iter().zip(STYLES.iter()).enumerate() {
             // The name under a tile counts as the tile.
@@ -248,7 +287,16 @@ impl ModeBar {
             let selected = self.selected == Some(k);
             let active = style == current;
             // A frame round the tile: bright on the one under the arrows, blue on the one in use.
-            painter.rect_filled(rect, 6.0 * s, Color32::from_rgb(14, 14, 17));
+            // The still, cropped to the tile (it is 16:9, the window may not be).
+            let side = rect.size() / Vec2::new(16.0, 9.0);
+            let fit = side.x.min(side.y) / side.x.max(side.y);
+            let uv = if rect.width() / rect.height() > 16.0 / 9.0 {
+                Rect::from_center_size(Pos2::new(0.5, 0.5), Vec2::new(1.0, fit))
+            } else {
+                Rect::from_center_size(Pos2::new(0.5, 0.5), Vec2::new(fit, 1.0))
+            };
+            let still = self.previews[k].id();
+            painter.add(egui::epaint::RectShape::filled(rect, 6.0 * s, Color32::WHITE).with_texture(still, uv));
             let ring = if selected {
                 Some(Stroke::new(3.0 * s, ink))
             } else if active {
@@ -278,7 +326,6 @@ impl ModeBar {
             if interactive && click.is_some_and(|p| hit.contains(p)) {
                 picked = Some(Pick::Style(style));
             }
-            tiles.push(Tile { rect, style });
         }
         if over_more {
             ctx.set_cursor_icon(CursorIcon::PointingHand);
@@ -290,6 +337,6 @@ impl ModeBar {
                 picked = Some(Pick::Close);
             }
         }
-        (picked, tiles, shown)
+        picked
     }
 }
