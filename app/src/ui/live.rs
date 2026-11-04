@@ -21,7 +21,7 @@ use crate::anim::{ease_in_cubic, ease_out_cubic, remap, spring};
 use crate::icons;
 
 pub(super) mod looks;
-use looks::Look;
+use looks::{Fill, Look};
 
 /// What the music is doing right now, each 0..1.
 #[derive(Clone, Copy, Default)]
@@ -363,6 +363,49 @@ pub(super) fn listed(token: &Token, list: &[Entry]) -> bool {
 
 fn mood(token: &Token) -> Option<Mood> {
     LISTS.moods.iter().find(|(_, words)| listed(token, words)).map(|(mood, _)| *mood)
+}
+
+/// How the live lyrics color a word, for styles that borrow just its colors.
+#[derive(Clone, Copy)]
+pub(super) struct Tint {
+    look: Option<&'static Look>,
+    mood: Option<Mood>,
+}
+
+impl Tint {
+    /// The colors the live lyrics give `word` (in a Czech or Slovak song,
+    /// `czech`), if it has any of its own.
+    pub(super) fn of(word: &str, czech: bool) -> Option<Self> {
+        let bare = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '\'');
+        if bare.is_empty() {
+            return None;
+        }
+        let token = Token::new(bare, czech);
+        let look = looks::look(&token);
+        let mood = look.and_then(|l| l.mood).or_else(|| mood(&token));
+        let colored = match look {
+            Some(l) => l.fill.main() != Color32::WHITE || !l.stripes.is_empty() || matches!(l.fill, Fill::Letters(_)),
+            None => matches!(mood, Some(Mood::Fire | Mood::Cold | Mood::Money | Mood::Love | Mood::Freaky | Mood::Flash)),
+        };
+        colored.then_some(Self { look, mood })
+    }
+
+    /// Letter `j` of `n` at song time `clock`; `base` for what isn't colored.
+    pub(super) fn color(self, base: Color32, j: usize, n: usize, clock: f32) -> Color32 {
+        match self.look {
+            // A white name with stripes wears them in its letters.
+            Some(l) if matches!(l.fill, Fill::Solid(c) if c == Color32::WHITE) && !l.stripes.is_empty() => {
+                l.stripes[j * l.stripes.len() / n.max(1)]
+            }
+            Some(l) => l.fill.color(j, n, clock),
+            None => mood_color(self.mood, base, j, clock),
+        }
+    }
+}
+
+/// Whether the song is sung in Czech or Slovak, for [`Tint::of`].
+pub(super) fn sung_in_czech(lyrics: &mv_enrich::Lyrics) -> bool {
+    czech(lyrics)
 }
 
 /// Words only Czech and Slovak are full of, so their songs give themselves away.

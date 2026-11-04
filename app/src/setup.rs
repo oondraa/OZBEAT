@@ -1,5 +1,5 @@
 //! The setup panel: shown on first run, and any time later with Ctrl+S
-//! (settings) or Ctrl+A (modes: what to see). Every change is saved
+//! (settings) or the modes (what to see, from the grid of styles Tab opens). Every change is saved
 //! immediately.
 
 use std::sync::Arc;
@@ -47,7 +47,7 @@ const UPDATE: (char, Color32) = ('\u{e6a2}', Color32::from_rgb(0x2F, 0xC2, 0x7A)
 pub enum Panel {
     /// Ctrl+S: where the music comes from, sound, lights, updates.
     Settings,
-    /// Ctrl+A: what to see, such as how the lyrics look.
+    /// "Další módy" on the grid of styles: what to see besides how the lyrics look.
     Modes,
 }
 
@@ -241,8 +241,8 @@ fn header(ui: &mut egui::Ui, panel: Panel, first_run: bool, done: &mut bool) {
                     .color(Color32::WHITE),
             );
             let hint = match (first_run, panel) {
-                (true, _) => "Pár voleb a jedeme. Nastavení je pak pod Ctrl+S, módy pod Ctrl+A.",
-                (false, Panel::Settings) => "Všechno se ukládá hned. Co chceš vidět, je v módech (Ctrl+A).",
+                (true, _) => "Pár voleb a jedeme. Nastavení je pak pod Ctrl+S, styly textů pod Tabem.",
+                (false, Panel::Settings) => "Všechno se ukládá hned. Styly textů vybereš Tabem.",
                 (false, Panel::Modes) => "Co chceš vidět. Ukládá se hned, nastavení je pod Ctrl+S.",
             };
             ui.label(RichText::new(hint).color(QUIET));
@@ -404,9 +404,9 @@ fn footer(ui: &mut egui::Ui) {
         ui.spacing_mut().item_spacing.x = 6.0;
         for (keys, what) in [
             ("Ctrl+S", "nastavení"),
-            ("Ctrl+A", "módy"),
+            ("Tab", "styly textů"),
             ("Ctrl+D", "druhá obrazovka"),
-            ("Ctrl+L", "styl textů"),
+            ("← →", "další styl"),
             ("Ctrl+K", "sdílet kartu"),
             ("Alt+šipky", "posun textů"),
             ("F11", "celá obrazovka"),
@@ -556,7 +556,7 @@ fn lyrics_modes(ui: &mut egui::Ui, s: &mut Settings, reveal: &dyn Fn(usize) -> f
                 ui,
                 LYRICS,
                 "Texty",
-                "Styl textů se přepíná na liště pod Ctrl+A, nebo dokola Ctrl+L.",
+                "Styl textů vybereš v mřížce pod Tabem, nebo šipkami ← → bez ní.",
             );
             switch(
                 ui,

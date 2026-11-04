@@ -51,9 +51,10 @@ SCREENSAVER (rename or copy the exe to OZBEAT.scr, then right-click > Install):
 
 KEYS:
     Ctrl+S               settings
-    Ctrl+A               modes: what to see, such as the lyrics style
+    Tab                  the lyrics styles, as a grid of live previews
+    Left/Right           previous / next lyrics style
     Ctrl+D               mirror the visuals on the next screen
-    Ctrl+L               next lyrics style (words, drum, lens, loupe, live)
+    Ctrl+L               next lyrics style
     Ctrl+K               share card of the line being sung (Pictures\\OZBEAT, clipboard)
     Alt+Left/Right       this song's lyrics later / earlier, remembered
     Ctrl+Alt+T           lyrics alone over the desktop, from anywhere
