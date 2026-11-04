@@ -57,6 +57,15 @@ impl Transport {
                 .is_some_and(|p| self.pill.expand(6.0).contains(p))
     }
 
+    /// Whether the pointer rests over the window, off the buttons, as long
+    /// as the buttons wait before hiding: the cursor can hide then too.
+    pub fn resting(&self, ctx: &egui::Context) -> bool {
+        self.last_activity.elapsed() >= LINGER
+            && ctx
+                .input(|i| i.pointer.hover_pos())
+                .is_some_and(|p| !self.pill.contains(p))
+    }
+
     /// Draws the buttons over `screen` while the mouse moves, if `allowed`,
     /// with the cover's `accent`. Returns the button clicked.
     pub fn show(
@@ -111,14 +120,7 @@ impl Transport {
             egui::Id::new("ozbeat-transport"),
         ));
         painter.multiply_opacity(shown);
-        painter.rect_filled(self.pill, radius, Color32::from_black_alpha(150));
-        painter.rect_filled(self.pill, radius, Color32::from_white_alpha(14));
-        painter.rect_stroke(
-            self.pill,
-            radius,
-            Stroke::new(1.0, Color32::from_white_alpha(46)),
-            egui::StrokeKind::Inside,
-        );
+        crate::glass::pane(&painter, self.pill, radius, crate::glass::Look::PILL);
 
         let mut clicked = None;
         for (k, press) in BUTTONS.into_iter().enumerate() {

@@ -315,6 +315,7 @@ impl VisualApp {
         crate::frameless::install(cc);
         if let Some(render_state) = &cc.wgpu_render_state {
             background::init(render_state);
+            crate::glass::init(render_state);
         }
         let settings_open = match mode {
             Mode::Configure => true,
@@ -757,72 +758,6 @@ impl VisualApp {
         }
     }
 
-    /// `style` as it would fill `full`, drawn shrunk into `tile` on the grid
-    /// of styles (the `k`th): laid out at the window's size and scaled, so it
-    /// looks as it will and needs no new font sizes.
-    #[allow(clippy::too_many_arguments)]
-    fn draw_style_preview(&self, ctx: &egui::Context, full: Rect, tile: Rect, f: &FrameData, style: LyricsStyle, k: usize, alpha: f32) {
-        let layer = egui::LayerId::new(egui::Order::Tooltip, egui::Id::new(("ozbeat-style-preview", k)));
-        let scale = tile.width() / full.width();
-        ctx.set_transform_layer(layer, egui::emath::TSTransform::new(tile.min.to_vec2() - full.min.to_vec2() * scale, scale));
-        let mut painter = ctx.layer_painter(layer).with_clip_rect(full);
-        painter.multiply_opacity(alpha);
-        let mut f = f.clone();
-        f.lyrics_style = style;
-        let cover = self.art.layers(|t| t.cover.as_ref()).into_iter().flatten().last().map(|(t, _)| t.id());
-        // What the moving styles go over: the cover, dimmed.
-        painter.rect_filled(full, 0.0, Color32::from_rgb(12, 12, 15));
-        if let (Some(cover), false) = (cover, style.full_screen()) {
-            let side = full.width().max(full.height());
-            let uv = Rect::from_center_size(Pos2::new(0.5, 0.5), full.size() / side);
-            painter.image(cover, full, uv, Color32::from_gray(70));
-        }
-        let lyrics = f.enrichment.as_ref().and_then(|e| e.lyrics.as_ref()).filter(|l| !l.synced.is_empty());
-        let (Some(lyrics), Some(position), Some(np)) = (lyrics, f.lyrics_position, f.now_playing.as_ref()) else {
-            let icon = crate::modebar::STYLES.iter().find(|(s, _, _)| *s == style).map_or('?', |(_, i, _)| *i);
-            painter.text(full.center(), Align2::CENTER_CENTER, icon, FontId::new(full.height() * 0.25, FontFamily::Name(icons::FONT.into())), Color32::from_white_alpha(90));
-            return;
-        };
-        let (center, size) = (full.center().y, big_lyrics_size(full));
-        let scene = screen::Scene {
-            rect: full,
-            lyrics,
-            position,
-            song_position: f.position,
-            np,
-            time: f.time,
-            palette: f.palette,
-            beat: groove(&f).beat,
-            cover,
-            clip: f.clip,
-            bpm: f.enrichment.as_ref().and_then(|e| e.bpm),
-        };
-        match style {
-            LyricsStyle::Typing | LyricsStyle::Flip => {
-                draw_typing_page(&painter, full, &f, 1.0);
-                typing::draw_typing(&painter, full, lyrics, position, center, size, 1.0, 0.0, style == LyricsStyle::Flip);
-            }
-            LyricsStyle::Block => {
-                typing::draw_page(&painter, full, 1.0, false);
-                typing::draw_block(&painter, full, lyrics, position, center, size, 1.0, 0.0);
-            }
-            LyricsStyle::Neon => screen::draw_neon(&painter, &scene),
-            LyricsStyle::Crt => screen::draw_crt(&painter, &scene),
-            LyricsStyle::CrtColor => screen::draw_crt_color(&painter, &scene),
-            LyricsStyle::Dance => screen::draw_dance(&painter, &scene),
-            LyricsStyle::Pocket => screen::draw_pocket(&painter, &scene),
-            LyricsStyle::Giant => screen::draw_giant(&painter, &scene),
-            LyricsStyle::Disc => screen::draw_disc(&painter, &scene, size),
-            LyricsStyle::Player => {
-                screen::draw_player(&painter, &scene, None);
-            }
-            LyricsStyle::Words | LyricsStyle::Drum | LyricsStyle::Lens | LyricsStyle::Loupe | LyricsStyle::Live => {
-                let line = lyrics.line_at(position).map_or(-1.0, |i| i as f32);
-                draw_timed_lyrics(&painter, full, &f, Some(position), 0.0, lyrics, line, center, size, 0.0);
-            }
-        }
-    }
-
     /// A whole-screen lyric style (see [`LyricsStyle::full_screen`]) over the
     /// window, when the song has timed lyrics and the player says where it
     /// is. Returns whether it drew.
@@ -1018,6 +953,8 @@ impl VisualApp {
                 },
                 art: backdrop,
                 prev: prev.map(|(b, _)| b),
+                key: ui.ctx().viewport_id().0.value(),
+                frame: ui.ctx().cumulative_pass_nr(),
             },
         ));
 
@@ -1027,7 +964,18 @@ impl VisualApp {
         };
         // A whole-screen style takes the window, unless Ctrl+D sent the lyrics away.
         let elsewhere = matches!(content, Content::Main { split, .. } if split >= 0.5);
+        crate::glass::set_flat(ui.ctx(), None);
         if !elsewhere && f.lyrics_style.full_screen() && self.draw_full_style(ui, rect, f, np) {
+            // Its glass stands on what the style fills the window with.
+            let under = match f.lyrics_style {
+                LyricsStyle::Typing | LyricsStyle::Block | LyricsStyle::Disc => Color32::from_gray(240),
+                LyricsStyle::Flip => Color32::from_gray(120),
+                LyricsStyle::Giant => Color32::from_gray(200),
+                LyricsStyle::Crt => Color32::from_rgb(70, 8, 12),
+                LyricsStyle::Dance => Color32::from_rgb(120, 40, 40),
+                _ => Color32::from_gray(12),
+            };
+            crate::glass::set_flat(ui.ctx(), Some(under));
             return;
         }
         // The video plays where the settings put it; in the main window it
@@ -1051,6 +999,10 @@ impl VisualApp {
             .filter(|c| c.alpha > 0.0);
         if let Some(clip) = clip {
             draw_clip(&painter, rect, clip);
+            // The video is not in the glass's backdrop: let it show through.
+            if clip.alpha > 0.5 {
+                crate::glass::set_flat(ui.ctx(), Some(Color32::BLACK));
+            }
         }
         // Over a video, the cover and titles give way to a small caption.
         let video = clip.map_or(0.0, |c| c.alpha);
@@ -1856,11 +1808,7 @@ impl VisualApp {
             Screen::Main => &mut self.mode_bar,
             Screen::Mirror => &mut self.mirror_mode_bar,
         };
-        let (pick, tiles, shown) = bar.show(&ctx, rect, style, bar_open);
-        for (k, tile) in tiles.iter().enumerate() {
-            self.draw_style_preview(&ctx, rect, tile.rect, f, tile.style, k, shown);
-        }
-        match pick {
+        match bar.show(&ctx, rect, style, bar_open) {
             Some(Pick::Style(style)) => {
                 {
                     let mut s = self.settings.lock().unwrap();
@@ -1884,7 +1832,13 @@ impl VisualApp {
             Screen::Main => &mut self.transport,
             Screen::Mirror => &mut self.mirror_transport,
         };
-        if let Some(press) = transport.show(&ctx, rect, accent, paused, buttons) {
+        let press = transport.show(&ctx, rect, accent, paused, buttons);
+        // A still mouse over the visuals hides with the buttons; any move
+        // brings both back.
+        if self.mode == Mode::Window && panel == 0.0 && !bar_open && transport.resting(&ctx) {
+            ctx.set_cursor_icon(egui::CursorIcon::None);
+        }
+        if let Some(press) = press {
             self.playback(press);
         }
         if panel == 0.0 {
@@ -2008,21 +1962,22 @@ impl VisualApp {
         }
         let fade = 1.0
             - (age.saturating_sub(TOAST_VISIBLE).as_secs_f32() / TOAST_FADE.as_secs_f32()).min(1.0);
-        let painter = ctx.layer_painter(egui::LayerId::new(
+        let mut painter = ctx.layer_painter(egui::LayerId::new(
             egui::Order::Tooltip,
             egui::Id::new("ozbeat-toast"),
         ));
+        painter.multiply_opacity(fade);
         let screen = ctx.content_rect();
         let galley = painter.layout_no_wrap(
             text.clone(),
             FontId::new(16.0, FontFamily::Name(REGULAR.into())),
-            Color32::from_white_alpha((230.0 * fade) as u8),
+            Color32::from_white_alpha(235),
         );
         let bg = Rect::from_center_size(
             Pos2::new(screen.center().x, screen.bottom() - 70.0),
-            galley.size() + Vec2::new(36.0, 20.0),
+            galley.size() + Vec2::new(40.0, 24.0),
         );
-        painter.rect_filled(bg, 12.0, Color32::from_black_alpha((170.0 * fade) as u8));
+        crate::glass::pane(&painter, bg, bg.height() / 2.0, crate::glass::Look::PILL);
         painter.galley(bg.center() - galley.size() / 2.0, galley, Color32::WHITE);
     }
 }
@@ -3719,6 +3674,139 @@ mod tests {
             }
         }
         image.save(dir.join("modebar.png")).unwrap();
+    }
+
+    /// The still pictures of the styles on Tab's grid (`assets/previews`),
+    /// rasterized like [`draws_words`]:
+    /// `cargo test -p musicvisual draws_previews -- --ignored`.
+    #[test]
+    #[ignore]
+    fn draws_previews() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/previews");
+        std::fs::create_dir_all(&dir).unwrap();
+        let line = |at: f64, text: &str| LyricLine {
+            at: Duration::from_secs_f64(at),
+            text: text.to_owned(),
+            words: Vec::new(),
+            end: None,
+        };
+        let lyrics = Lyrics {
+            synced: vec![
+                line(2.0, "Celou noc jedu městem"),
+                line(6.0, "Srdce mi hoří, peníze v kapse"),
+                line(10.0, "Zítra ráno odletím"),
+                line(14.0, ""),
+            ],
+            plain: None,
+            estimated: false,
+        };
+        let np = NowPlaying {
+            track: mv_core::Track {
+                title: "Celou noc".into(),
+                artist: Some("OZBEAT".into()),
+                album: None,
+                art_url: None,
+            },
+            state: PlaybackState::Playing,
+            duration: Some(Duration::from_secs(200)),
+            position: None,
+            position_at: SystemTime::now(),
+            device: None,
+            volume: None,
+            muted: false,
+            shuffle: None,
+            repeat: None,
+        };
+        let ctx = egui::Context::default();
+        install_fonts(&ctx);
+        let size = Vec2::new(960.0, 540.0);
+        let input = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
+            ..Default::default()
+        };
+        let mut atlas = Atlas::default();
+        let vivid = [0.95, 0.45, 0.35];
+        let at = 8.4;
+        for (style, _, _) in crate::modebar::STYLES {
+            let draw = |ctx: &egui::Context| {
+                let painter = ctx.layer_painter(egui::LayerId::background());
+                let rect = Rect::from_min_size(Pos2::ZERO, size);
+                // What the moving styles go over: a dim picture in warm colors.
+                painter.add(egui::Shape::gradient_rect(
+                    rect,
+                    egui::Direction::LeftToRight,
+                    [Color32::from_rgb(52, 22, 40), Color32::from_rgb(18, 24, 58)],
+                ));
+                let position = Duration::from_secs_f64(at);
+                let (center, size) = (rect.center().y, big_lyrics_size(rect));
+                let scene = screen::Scene {
+                    rect,
+                    lyrics: &lyrics,
+                    position,
+                    song_position: Some(Duration::from_secs_f64(at + 60.0)),
+                    np: &np,
+                    time: at as f32,
+                    palette: [vivid, [0.3, 0.3, 0.5], [0.1, 0.1, 0.1]],
+                    beat: 0.5,
+                    cover: None,
+                    clip: None,
+                    bpm: Some(120.0),
+                };
+                match style {
+                    LyricsStyle::Words => draw_words(&painter, rect, &lyrics, position, center, size, vivid, 0.0, None),
+                    LyricsStyle::Drum => draw_drum(&painter, rect, &lyrics, position, center, size, vivid, 0.0),
+                    LyricsStyle::Lens => draw_lens(&painter, rect, &lyrics, position, center, size, vivid, 0.0),
+                    LyricsStyle::Loupe => draw_loupe(&painter, rect, &lyrics, position, center, size, vivid, 0.0),
+                    LyricsStyle::Live => {
+                        let groove = live::Groove { beat: 0.6, bass: 0.5 };
+                        live::draw_live(&painter, rect, &lyrics, position, center, size, [vivid, [0.2, 0.45, 0.95], vivid], 0.0, groove)
+                    }
+                    LyricsStyle::Typing => {
+                        typing::draw_page(&painter, rect, 1.0, false);
+                        typing::draw_typing(&painter, rect, &lyrics, position, center, size, 1.0, 0.0, false)
+                    }
+                    LyricsStyle::Flip => {
+                        // Caught on a dark page, so it differs from typing.
+                        let position = (0..40)
+                            .map(|k| position + Duration::from_millis(100 * k))
+                            .find(|&p| typing::flipped(&lyrics, p))
+                            .unwrap_or(position);
+                        typing::draw_page(&painter, rect, 1.0, true);
+                        typing::draw_typing(&painter, rect, &lyrics, position, center, size, 1.0, 0.0, true)
+                    }
+                    LyricsStyle::Block => {
+                        typing::draw_page(&painter, rect, 1.0, false);
+                        typing::draw_block(&painter, rect, &lyrics, position, center, size, 1.0, 0.0)
+                    }
+                    LyricsStyle::Neon => screen::draw_neon(&painter, &scene),
+                    LyricsStyle::Crt => screen::draw_crt(&painter, &scene),
+                    LyricsStyle::CrtColor => screen::draw_crt_color(&painter, &scene),
+                    LyricsStyle::Dance => screen::draw_dance(&painter, &scene),
+                    LyricsStyle::Pocket => screen::draw_pocket(&painter, &scene),
+                    LyricsStyle::Giant => screen::draw_giant(&painter, &scene),
+                    LyricsStyle::Disc => screen::draw_disc(&painter, &scene, size),
+                    LyricsStyle::Player => {
+                        screen::draw_player(&painter, &scene, None);
+                    }
+                }
+            };
+            let warm_up = ctx.run_ui(input(), |ui| draw(ui.ctx()));
+            let out = ctx.run_ui(input(), |ui| draw(ui.ctx()));
+            for (id, delta) in warm_up.textures_delta.set.iter().chain(&out.textures_delta.set) {
+                atlas.apply(*id, delta);
+            }
+            let primitives = ctx.tessellate(out.shapes, out.pixels_per_point);
+            let mut image = image::RgbaImage::new(size.x as u32, size.y as u32);
+            for p in primitives {
+                if let egui::epaint::Primitive::Mesh(mesh) = p.primitive {
+                    rasterize(&mut image, &mesh, &atlas);
+                }
+            }
+            let small = image::imageops::resize(&image, 480, 270, image::imageops::FilterType::Triangle);
+            let rgb = image::DynamicImage::ImageRgba8(small).to_rgb8();
+            let file = std::fs::File::create(dir.join(crate::modebar::preview_file(style))).unwrap();
+            image::codecs::jpeg::JpegEncoder::new_with_quality(file, 88).encode_image(&rgb).unwrap();
+        }
     }
 
     /// The whole-screen styles, rasterized like [`draws_words`]:

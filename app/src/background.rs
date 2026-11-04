@@ -33,6 +33,9 @@ pub struct Background {
     pub art: Option<(u64, Arc<Picture>)>,
     /// The artwork fading out.
     pub prev: Option<(u64, Arc<Picture>)>,
+    /// The window (viewport) and frame, for its glass (see `glass`).
+    pub key: u64,
+    pub frame: u64,
 }
 
 struct Resources {
@@ -41,6 +44,9 @@ struct Resources {
     layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     bind_group: wgpu::BindGroup,
+    /// The same, drawn small for the glass to look through.
+    backdrop_uniforms: wgpu::Buffer,
+    backdrop_bind_group: wgpu::BindGroup,
     /// Uploaded artwork by art id: the current and the previous one.
     textures: Vec<(u64, wgpu::TextureView)>,
     placeholder: wgpu::TextureView,
@@ -148,6 +154,13 @@ pub fn init(render_state: &egui_wgpu::RenderState) {
         ..Default::default()
     });
 
+    let backdrop_uniforms = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("backdrop uniforms"),
+        size: size_of::<Uniforms>() as u64,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
     let placeholder = upload(
         device,
         &render_state.queue,
@@ -163,6 +176,13 @@ pub fn init(render_state: &egui_wgpu::RenderState) {
         &sampler,
         [&placeholder, &placeholder],
     );
+    let backdrop_bind_group = art_bind_group(
+        device,
+        &layout,
+        &backdrop_uniforms,
+        &sampler,
+        [&placeholder, &placeholder],
+    );
 
     render_state
         .renderer
@@ -174,6 +194,8 @@ pub fn init(render_state: &egui_wgpu::RenderState) {
             layout,
             sampler,
             bind_group,
+            backdrop_uniforms,
+            backdrop_bind_group,
             textures: Vec::new(),
             placeholder,
             bound: (None, None),
@@ -243,9 +265,12 @@ impl CallbackTrait for Background {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         screen: &ScreenDescriptor,
-        _encoder: &mut wgpu::CommandEncoder,
+        encoder: &mut wgpu::CommandEncoder,
         resources: &mut CallbackResources,
     ) -> Vec<wgpu::CommandBuffer> {
+        let backdrop = resources.get_mut::<crate::glass::Resources>().map(|glass| {
+            glass.backdrop_target(device, self.key, self.frame, screen.size_in_pixels)
+        });
         let Some(res) = resources.get_mut::<Resources>() else {
             return Vec::new();
         };
@@ -273,6 +298,13 @@ impl CallbackTrait for Background {
                 &res.sampler,
                 [view(wanted.0), view(wanted.1)],
             );
+            res.backdrop_bind_group = art_bind_group(
+                device,
+                &res.layout,
+                &res.backdrop_uniforms,
+                &res.sampler,
+                [view(wanted.0), view(wanted.1)],
+            );
             res.bound = wanted;
         }
 
@@ -280,6 +312,33 @@ impl CallbackTrait for Background {
         uniforms.resolution = screen.size_in_pixels.map(|v| v as f32);
         uniforms.srgb_target = if res.srgb_target { 1.0 } else { 0.0 };
         queue.write_buffer(&res.uniforms, 0, bytemuck::bytes_of(&uniforms));
+
+        // Again, small, into the texture the glass looks through.
+        if let Some(target) = backdrop {
+            uniforms.resolution = screen
+                .size_in_pixels
+                .map(|v| ((v as f32 * crate::glass::BACKDROP_SCALE) as u32).max(1) as f32);
+            queue.write_buffer(&res.backdrop_uniforms, 0, bytemuck::bytes_of(&uniforms));
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("glass backdrop"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &target,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&res.pipeline);
+            pass.set_bind_group(0, &res.backdrop_bind_group, &[]);
+            pass.draw(0..3, 0..1);
+        }
         Vec::new()
     }
 

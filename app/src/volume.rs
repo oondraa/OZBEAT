@@ -117,14 +117,7 @@ impl VolumeHud {
         let radius = size.y / 2.0;
 
         // Glass: a dark see-through pane and a thin rim.
-        painter.rect_filled(pill, radius, Color32::from_black_alpha(150));
-        painter.rect_filled(pill, radius, Color32::from_white_alpha(14));
-        painter.rect_stroke(
-            pill,
-            radius,
-            Stroke::new(1.0, Color32::from_white_alpha(46)),
-            egui::StrokeKind::Inside,
-        );
+        crate::glass::pane(&painter, pill, radius, crate::glass::Look::PILL);
 
         let icon = Pos2::new(pill.left() + radius * 1.05, pill.center().y);
         self.draw_ripples(&painter, icon, s, accent);

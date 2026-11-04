@@ -10,6 +10,7 @@ mod card;
 mod clip;
 mod control;
 mod frameless;
+mod glass;
 mod hotkey;
 mod icons;
 mod modebar;
