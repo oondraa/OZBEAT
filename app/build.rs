@@ -8,7 +8,7 @@ fn main() {
         let mut resource = winresource::WindowsResource::new();
         resource.set_icon("assets/ozbeat.ico");
         resource.set("ProductName", "OZBEAT");
-        resource.set("FileDescription", "OZBEAT music visualizer");
+        resource.set("FileDescription", "OZBEAT");
         if let Err(e) = resource.compile() {
             // A missing resource compiler only costs the file icon, not the build.
             println!("cargo:warning=could not embed the app icon: {e}");
