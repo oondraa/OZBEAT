@@ -2226,7 +2226,7 @@ dependencies = [
 
 [[package]]
 name = "musicvisual"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "aws-lc-rs",
  "bytemuck",
